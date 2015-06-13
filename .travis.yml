@@ -1,3 +1,14 @@
+language: node_js
+
+git:
+  depth: 9999999
+
+notifications:
+  slack: panici-software:yEIqaK9rm2x2CQaglH8GgGVq
+
+node_js:
+  - iojs-v2.2.1
+
 deploy:
   provider: npm
   email: jeff.panici@panici-software.com
