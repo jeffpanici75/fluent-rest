@@ -4,19 +4,29 @@ let express = require('express');
 let pluralize = require('pluralize');
 let debug = require('debug')('fluent-rest');
 
+function first(x) {
+    return x && x.length > 0 ? x[0] : null;
+}
+
+function last(x) {
+    return x && x.length > 0 ? x[x.length - 1] : null;
+}
+
 export function hal_formatter(req, res, next) {
-    let status_code = res.fluent_rest.status_code || 200;
+    let status_code;
     let resource = null;
     if (res.fluent_rest.error) {
         resource = new hal.Resource(res.fluent_rest.error, res.fluent_rest.uri);
+        status_code = res.fluent_rest.status_code || 500;
     } else {
         if (res.fluent_rest.rows.length > 1) {
             resource = new hal.Resource({}, res.fluent_rest.uri); 
             resource.embed(res.fluent_rest.name, res.fluent_rest.rows);
         }
         else {
-            resource = new hal.Resource(res.fluent_rest.rows.first(), res.fluent_rest.uri);
+            resource = new hal.Resource(first(res.fluent_rest.rows), res.fluent_rest.uri);
         }
+        status_code = res.fluent_rest.status_code || 200;
     }
     res.format({
         'application/hal+json': function() {
@@ -74,14 +84,15 @@ class endpoint {
 }
 
 class entity_builder {
-    constructor(conn_str, entity, resource) {
-        this._conn_str = conn_str.expand_vars();
+    constructor(db, entity, resource) {
+        this._db = db;
         this._entity = entity;
         this._constraints = {};
         this._primary_key = 'id';
         this._resource = resource;
         this._full_text_entity = null;
-        this._verbs = { get: true, put: true, patch: true, post: true, del: true };
+        this._verbs = { get: true, put: true, patch: true, post: true, delete: true };
+        this._reserved = { fields: true, sort: true, q: true, page: true, page_count: true };
     }
 
     get resource() {
@@ -108,13 +119,18 @@ class entity_builder {
         return this;
     }
 
-    disable_del() {
-        this._verbs.del = false;
+    disable_delete() {
+        this._verbs.delete = false;
         return this;
     }
 
     primary_key(pk) {
         this._primary_key = pk;
+        return this;
+    }
+
+    reserve(field) {
+        this._reserved[field] = true;
         return this;
     }
 
@@ -128,9 +144,9 @@ class entity_builder {
         return this;
     }
 
-    entity(use) {
+    entity(use, req) {
         if (typeof this._entity === 'function')
-            return this._entity(use);
+            return this._entity(use, req);
         return this._entity;
     }
 
@@ -143,14 +159,22 @@ class entity_builder {
             base_uri += '/';
         let uri = url.resolve(base_uri, mp.resource_name);
         let singular = pluralize.singular(mp.resource_name);
-        let db = require('pg-bricks').configure(this._conn_str);
 
         links.push({ name: mp.resource_name, url: { href: `${uri}/` }});
         links.push({ name: singular, url: { href: `${uri}/{id}/`, templated: true }});
         if (this._full_text_entity)
             links.push({ name: `${singular}_search`, url: { href: `${uri}/{?q}`, templated: true }});
 
-        let select_fields = (fields) => fields ? fields.split(',').map((x) => x.trim()) : '*'; 
+        let is_allowed = (req, res) => {            
+            if (this._verbs[req.method.toLowerCase()]) return true;
+
+            let error = new Error(`This resource does not support the HTTP verb ${req.method.toUpperCase()}.`);
+            error.status_code = 405;
+            res.fluent_rest = { error }; 
+            middleware_chainer(0, req, res);
+            return false;
+        };
+
         let middleware_chainer = (i, req, res) => {
             if (i >= mp.rest_service.middlewares.length) {
                 res.end();
@@ -162,14 +186,23 @@ class entity_builder {
             });
         };
 
-        let handler = (req, res) => {
-            if (!this._verbs.get) {
-                let error = new Error('This resource does not support GET.');
-                error.status_code = 405;
-                res.fluent_rest = { error }; 
-                middleware_chainer(0, req, res);
-                return;
+        let select_fields = (fields) => fields ? fields.split(',').map((x) => x.trim()) : '*'; 
+    
+        let get_filters = (req) => {
+            let list = {};
+            for (let x in req.query) {
+                if (this._reserved[x]) continue;
+                list[x] = req.query[x];
             }
+            return list;
+        };
+
+        let get_sorts = (req) => req.query.sort
+            .split(',')
+            .map((x) => x.charAt(0) === '-' ? x.substring(1) + ' desc' : x);
+
+        let handler = (req, res) => {
+            if (!is_allowed(req, res)) return;
 
             if (req.params.id) {
                 let named_query = this.resource.named_queries[req.params.id];
@@ -178,8 +211,8 @@ class entity_builder {
                         req.query[x] = named_query[x];
                 } else {
                     let fields = select_fields(req.query.fields);
-                    db.select(fields)
-                        .from(this.entity('get-id'))
+                    this._db.select(fields)
+                        .from(this.entity('get-id', req))
                         .where(this._primary_key, req.params.id)
                         .rows((err, rows) => {
                             res.fluent_rest = {
@@ -199,32 +232,23 @@ class entity_builder {
             let count_query, query = null;
 
             if (this._full_text_entity && req.query.q) {
-                count_query = db.select('count(*) as c')
+                count_query = this._db.select('count(*) as c')
                     .from(this._full_text_entity.name)
                     .where(this._full_text_entity.field, req.query.q);
 
-                query = db.select(fields)
+                query = this._db.select(fields)
                     .from(this._full_text_entity.name)
                     .where(this._full_text_entity.field, req.query.q);
             } else {
-                query = db.select(fields).from(this.entity('get'));
-                count_query = db.select('count(*) as c').from(this.entity('get'));
+                query = this._db.select(fields).from(this.entity('get', req));
+                count_query = this._db.select('count(*) as c').from(this.entity('get', req));
             }
 
             if (req.query.sort) {
-                let sorts = req.query.sort
-                    .split(',')
-                    .map((x) => x.charAt(0) === '-' ? x.substring(1) + ' desc' : x);
-                query = query.orderBy(sorts);
+                query = query.orderBy(get_sorts(req));
             }
 
-            let filters = {};
-            const reserved = { fields: true, sort: true, q: true, page: true, page_count: true };
-            for (let x in req.query) {
-                if (reserved[x]) continue;
-                filters[x] = req.query[x];
-            }
-
+            let filters = get_filters(req);
             if (Object.keys(filters).length > 0) {
                 query = query.where(filters);
                 count_query = count_query.where(filters);
@@ -255,7 +279,7 @@ class entity_builder {
                 count_query.rows((err, rows) => {
                     let page_links = [];
                     let page = parseInt(req.query.page || 0);
-                    let total_count = rows ? rows.first().c : 0;
+                    let total_count = (let r = first(rows)) ? r.c : 0;
                     let number_of_pages = Math.ceil(total_count / page_count);
 
                     if (page < number_of_pages - 1) {
@@ -294,60 +318,87 @@ class entity_builder {
         router.get('/:id', handler);
 
         router.put('/:id', (req, rest, next) => {
-            if (!this._verbs.put) {
-                let error = new Error('This resource does not support PUT.');
-                error.status_code = 405;
-                res.fluent_rest = { error }; 
-                middleware_chainer(0, req, res);
-                return;
-            }
-            db.update(this.entity('put'), req.body)
+            if (!is_allowed(req, res)) return;
+
+            this._db.select()
+                .from(this.entity('get-id', req))
                 .where(this._primary_key, req.params.id)
-                .returning(select_fields(req.query.fields))
-                .row((err, row) => {
-                    res.fluent_rest = {
-                        rows: [row],
-                        error: err,
-                        links: [],
-                        name: mp.resource_name,
-                        uri: `${uri}/${req.params.id}/`
-                    };
-                    middleware_chainer(0, req, res);
+                .rows((err, rows) => {
+                    if (err) {
+                        res.fluent_rest = { error: err };
+                        middleware_chainer(0, req, res);
+                        return;
+                    }
+                    let obj = first(rows);
+                    if (!obj) {
+                        let error = new Error(`No resource exists at ${uri}/${req.params.id}/.`);
+                        error.status_code = 404;
+                        res.fluent_rest = { error };
+                        middleware_chainer(0, req, res);
+                    } else {
+                        this._db.update(this.entity('put', req), req.body)
+                            .where(this._primary_key, req.params.id)
+                            .returning(select_fields(req.query.fields))
+                            .row((err, row) => {
+                                res.fluent_rest = {
+                                    rows: [row],
+                                    error: err,
+                                    links: [],
+                                    name: mp.resource_name,
+                                    uri: `${uri}/${req.params.id}/`
+                                };
+                                middleware_chainer(0, req, res);
+                            });
+                    }
                 });
         });
 
         router.patch('/:id', (req, rest, next) => {
-            if (!this._verbs.patch) {
-                let error = new Error('This resource does not support PATCH.');
-                error.status_code = 405;
-                res.fluent_rest = { error }; 
-                middleware_chainer(0, req, res);
-                return;
-            }
-            db.update(this.entity('patch'), req.body)
+            if (!is_allowed(req, res)) return;
+
+            this._db.select()
+                .from(this.entity('get-id', req))
                 .where(this._primary_key, req.params.id)
-                .returning(select_fields(req.query.fields))
-                .row((err, row) => {
-                    res.fluent_rest = {
-                        rows: [row],
-                        error: err,
-                        links: [],
-                        name: mp.resource_name,
-                        uri: `${uri}/${req.params.id}/`
-                    };
-                    middleware_chainer(0, req, res);
+                .rows((err, rows) => {
+                    if (err) {
+                        res.fluent_rest = { error: err };
+                        middleware_chainer(0, req, res);
+                        return;
+                    }
+                    let obj = first(rows);
+                    if (!obj) {
+                        let error = new Error(`No resource exists at ${uri}/${req.params.id}/.`);
+                        error.status_code = 404;
+                        res.fluent_rest = { error };
+                        middleware_chainer(0, req, res);
+                    } else {
+                        let patches = req.body;
+                        if (typeof patches === 'Array') {
+                            jsonpatch.apply(obj, patches);
+                        } else {
+                            obj = patches;
+                        }
+                        this._db.update(this.entity('patch', req), obj)
+                            .where(this._primary_key, req.params.id)
+                            .returning(select_fields(req.query.fields))
+                            .row((err, row) => {
+                                res.fluent_rest = {
+                                    rows: [row],
+                                    error: err,
+                                    links: [],
+                                    name: mp.resource_name,
+                                    uri: `${uri}/${req.params.id}/`
+                                };
+                                middleware_chainer(0, req, res);
+                            });
+                    }
                 });
         });
     
         router.post('/', (req, res) => {
-            if (!this._verbs.post) {
-                let error = new Error('This resource does not support POST.');
-                error.status_code = 405;
-                res.fluent_rest = { error }; 
-                middleware_chainer(0, req, res);
-                return;
-            }
-            db.insert(this.entity('post'), req.body)
+            if (!is_allowed(req, res)) return;
+
+            this._db.insert(this.entity('post', req), req.body)
                 .returning(select_fields(req.query.fields))
                 .row((err, row) => {
                     res.fluent_rest = {
@@ -355,53 +406,52 @@ class entity_builder {
                         error: err,
                         links: [],
                         uri: `${uri}/`,
-                        status_code: 201,
                         name: mp.resource_name,
+                        status_code: !err ? 201 : 500
                     };
                     middleware_chainer(0, req, res);
                 });
         });
 
         router.delete('/', (req, res) => {
-            if (!this._verbs.del) {
-                let error = new Error('This resource does not support DELETE.');
-                error.status_code = 405;
-                res.fluent_rest = { error }; 
-                middleware_chainer(0, req, res);
-                return;
+            if (!is_allowed(req, res)) return;
+
+            let query = this._db.delete(this.entity('del', req));
+
+            let filters = get_filters(req);
+            if (Object.keys(filters).length > 0) {
+                query = query.where(filters);
             }
-            db.delete(this.entity('del')).run((err) => {
+
+            query.run((err) => {
                 res.fluent_rest = {
                     rows: [],
                     error: err,
                     links: [],
                     uri: `${uri}/`,
-                    status_code: 204,
-                    name: mp.resource_name
+                    name: mp.resource_name,
+                    status_code: !err ? 204 : 500
                 };
                 middleware_chainer(0, req, res);
             });
         });
 
         router.delete('/:id', (req, res) => {
-            if (!this._verbs.del) {
-                let error = new Error('This resource does not support DELETE.');
-                error.status_code = 405;
-                res.fluent_rest = { error }; 
-                middleware_chainer(0, req, res);
-                return;
-            }
-            db.delete(this.entity('del')).where(this._primary_key, req.params.id).run((err) => {
-                res.fluent_rest = {
-                    rows: [],
-                    error: err,
-                    links: [],
-                    status_code: 204,
-                    name: mp.resource_name,
-                    uri: `${uri}/${req.params.id}/` 
-                };
-                middleware_chainer(0, req, res);
-            });
+            if (!is_allowed(req, res)) return;
+
+            this._db.delete(this.entity('del', req))
+                .where(this._primary_key, req.params.id)
+                .run((err) => {
+                    res.fluent_rest = {
+                        rows: [],
+                        error: err,
+                        links: [],
+                        name: mp.resource_name,
+                        status_code: !err ? 204 : 500,
+                        uri: `${uri}/${req.params.id}/` 
+                    };
+                    middleware_chainer(0, req, res);
+                });
         });
 
         mp.router.use(uri, router);
