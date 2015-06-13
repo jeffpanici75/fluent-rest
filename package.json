@@ -1,6 +1,6 @@
 {
   "name": "fluent-rest",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "A fluent library that generates Express REST endpoints for Postgres entites.",
   "main": "fluent_rest.js",
   "es6": true,
@@ -20,5 +20,6 @@
     "fast-json-patch": "^0.5.2",
     "hal": "^0.1.0",
     "pluralize": "^1.1.2"
-  }
+  },
+  "scripts": {}
 }
