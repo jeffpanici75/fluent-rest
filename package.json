@@ -1,0 +1,27 @@
+{
+  "name": "fluent-rest",
+  "version": "0.0.1",
+  "description": "A fluent library that generates Express REST endpoints for Postgres entites.",
+  "main": "fluent_rest.js",
+  "es6": true,
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jeffpanici75/fluent-rest.git"
+  },
+  "author": "Jeff Panici <jeff.panici@panici-software.com> (https://panici-software.com)",
+  "license": "GPL-2.0",
+  "bugs": {
+    "url": "https://github.com/jeffpanici75/fluent-rest/issues"
+  },
+  "homepage": "https://github.com/jeffpanici75/fluent-rest#readme",
+  "dependencies": {
+    "debug": "^2.2.0",
+    "express": "^4.12.4",
+    "fast-json-patch": "^0.5.2",
+    "hal": "^0.1.0",
+    "pluralize": "^1.1.2"
+  }
+}
