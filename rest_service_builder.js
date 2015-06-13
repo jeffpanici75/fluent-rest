@@ -2,7 +2,7 @@ let url = require('url');
 let hal = require('hal');
 let express = require('express');
 let pluralize = require('pluralize');
-let debug = require('debug')('fluent-rest');
+let debug = require('debug')('rest-service-builder');
 
 function first(x) {
     return x && x.length > 0 ? x[0] : null;
@@ -640,10 +640,5 @@ export class rest_service_builder {
     version_header(name) {
         this._version_header = name;
         return this;
-    }
-}
-
-export class rest_client_builder {
-    constructor() {
     }
 }
