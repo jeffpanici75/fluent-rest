@@ -9,7 +9,7 @@
     "url": "git+https://github.com/jeffpanici75/fluent-rest.git"
   },
   "author": "Jeff Panici <jeff.panici@panici-software.com> (https://panici-software.com)",
-  "license": "GPL-2.0",
+  "license": "LGPL-2.1",
   "bugs": {
     "url": "https://github.com/jeffpanici75/fluent-rest/issues"
   },
