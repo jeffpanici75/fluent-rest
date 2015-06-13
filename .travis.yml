@@ -4,10 +4,11 @@ git:
   depth: 9999999
 
 notifications:
-  slack: panici-software:yEIqaK9rm2x2CQaglH8GgGVq
+  slack:
+    secure: j4nMO+IwOitlFe1WSPctdS6W7Fa7WJS20bIQfkxRtFXCs6/UoP/R7G5KghGX6sPm5FvtXzWe8/LJDBapZHuoGgNOTGOKOL9QnU9cwfAQc2ZlXjcTgdJvnntJl2qSDir+COcgUAn7rpvoAbMttF3vhvSLjfyedethjMR7VBwlw1ezBg0FRhlNo1b2So+iop74GF+XlHSoJXALe2fOtRC1N6TrMDCtJnvXEFBpPENLh2EGWiv8f3+/HolWd57mdThD9HdAxB1i+gCdpjPA4nzMbZMec3TPr5pZwK58TE7AROpbuHUZgds3n42duJHJ9alcoF8j2WS8r53AYddvXT71FTD6HMRvxOcta9zSDeednX1q7W3LCB5U8dmNcjDcN+N+KuojtVJjDbb9jdjrhjOknce9Y4ZdyD/nIA9WGLSHvbU63sRHpgjJrXo8/guyJWjjjQk5D7g+UNYEQGp5H63muV3eyv5rH6seEEl6f0LsxeZbw65l8qGZAxpJjUve/NrQ//POjuK/7WnkbiqdxfSM5LJJ82JQGrj5GH/ubu5XJo8bLdiA8erCN397nW4Nm6nt7kU/4bRAp1xNM+Khlf/oN6r5HJkpq6qCccYAOOKDw0FI+BWDBgmClvNSNQL1/yWahqHeGIbvp9XKTgUyn379NCY5PwCe6fSYpMN46Uinp2M=
 
 node_js:
-  - iojs-v2.2.1
+- iojs-v2.2.1
 
 deploy:
   provider: npm
