@@ -16,8 +16,12 @@ export function hal_formatter(req, res, next) {
     let status_code;
     let resource = null;
     if (res.fluent_rest.error) {
-        resource = new hal.Resource(res.fluent_rest.error, res.fluent_rest.uri);
-        status_code = res.fluent_rest.status_code || 500;
+        let error = {
+            message: res.fluent_rest.error.message,
+            status_code: res.fluent_rest.error.status_code
+        };
+        resource = new hal.Resource(error, res.fluent_rest.uri);
+        status_code = res.fluent_rest.error.status_code || 500;
     } else {
         if (res.fluent_rest.rows.length > 1) {
             resource = new hal.Resource({}, res.fluent_rest.uri); 
@@ -215,6 +219,10 @@ class entity_builder {
                         .from(this.entity('get-id', req))
                         .where(this._primary_key, req.params.id)
                         .rows((err, rows) => {
+                            if (!err && (!rows || rows.length === 0)) {
+                                err = new Error(`No resource exists at ${uri}/${req.params.id}/.`);
+                                err.status_code = 404;
+                            }
                             res.fluent_rest = {
                                 rows: rows ? rows : [],
                                 error: err,
@@ -279,7 +287,8 @@ class entity_builder {
                 count_query.rows((err, rows) => {
                     let page_links = [];
                     let page = parseInt(req.query.page || 0);
-                    let total_count = (let r = first(rows)) ? r.c : 0;
+                    let r = first(rows);
+                    let total_count = r ? r.c : 0;
                     let number_of_pages = Math.ceil(total_count / page_count);
 
                     if (page < number_of_pages - 1) {
@@ -340,6 +349,7 @@ class entity_builder {
                             .where(this._primary_key, req.params.id)
                             .returning(select_fields(req.query.fields))
                             .row((err, row) => {
+                                if (err) err.status_code = 500;
                                 res.fluent_rest = {
                                     rows: [row],
                                     error: err,
@@ -382,6 +392,7 @@ class entity_builder {
                             .where(this._primary_key, req.params.id)
                             .returning(select_fields(req.query.fields))
                             .row((err, row) => {
+                                if (err) err.status_code = 500;
                                 res.fluent_rest = {
                                     rows: [row],
                                     error: err,
@@ -401,13 +412,14 @@ class entity_builder {
             this._db.insert(this.entity('post', req), req.body)
                 .returning(select_fields(req.query.fields))
                 .row((err, row) => {
+                    if (err) err.status_code = 500;
                     res.fluent_rest = {
                         rows: [row],
                         error: err,
                         links: [],
                         uri: `${uri}/`,
-                        name: mp.resource_name,
-                        status_code: !err ? 201 : 500
+                        status_code: 201,
+                        name: mp.resource_name
                     };
                     middleware_chainer(0, req, res);
                 });
@@ -424,13 +436,14 @@ class entity_builder {
             }
 
             query.run((err) => {
+                if (err) err.status_code = 500;
                 res.fluent_rest = {
                     rows: [],
                     error: err,
                     links: [],
                     uri: `${uri}/`,
-                    name: mp.resource_name,
-                    status_code: !err ? 204 : 500
+                    status_code: 204,
+                    name: mp.resource_name
                 };
                 middleware_chainer(0, req, res);
             });
@@ -442,12 +455,13 @@ class entity_builder {
             this._db.delete(this.entity('del', req))
                 .where(this._primary_key, req.params.id)
                 .run((err) => {
+                    if (err) err.status_code = 500;
                     res.fluent_rest = {
                         rows: [],
                         error: err,
                         links: [],
+                        status_code: 204,
                         name: mp.resource_name,
-                        status_code: !err ? 204 : 500,
                         uri: `${uri}/${req.params.id}/` 
                     };
                     middleware_chainer(0, req, res);
