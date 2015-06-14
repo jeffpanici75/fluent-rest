@@ -36,6 +36,7 @@ export function hal_formatter(req, res, next) {
         'application/hal+json': function() {
             res.fluent_rest.links.forEach((x) => resource.link(x.name, x.url));
             res.type('application/hal+json').status(status_code).send(resource.toJSON());
+            next();
         },
 
         'application/hal+xml': function() {
@@ -55,6 +56,7 @@ export function hal_formatter(req, res, next) {
                 resource.link(x.name, x.url);
             });
             res.type('application/hal+xml').status(status_code).send(resource.toXML());
+            next();
         },
 
         'default': function() {
@@ -163,6 +165,7 @@ class entity_builder {
             base_uri += '/';
         let uri = url.resolve(base_uri, mp.resource_name);
         let singular = pluralize.singular(mp.resource_name);
+        let id_name = `${singular}_id`;
 
         links.push({ name: mp.resource_name, url: { href: `${uri}/` }});
         links.push({ name: singular, url: { href: `${uri}/{id}/`, templated: true }});
@@ -208,8 +211,10 @@ class entity_builder {
         let handler = (req, res) => {
             if (!is_allowed(req, res)) return;
 
-            if (req.params.id) {
-                let named_query = this.resource.named_queries[req.params.id];
+            let id = req.params[id_name];
+
+            if (id) {
+                let named_query = this.resource.named_queries[id];
                 if (named_query) {
                     for (let x in named_query)
                         req.query[x] = named_query[x];
@@ -217,10 +222,10 @@ class entity_builder {
                     let fields = select_fields(req.query.fields);
                     this._db.select(fields)
                         .from(this.entity('get-id', req))
-                        .where(this._primary_key, req.params.id)
+                        .where(this._primary_key, id)
                         .rows((err, rows) => {
                             if (!err && (!rows || rows.length === 0)) {
-                                err = new Error(`No resource exists at ${uri}/${req.params.id}/.`);
+                                err = new Error(`No resource exists at ${uri}/${id}/.`);
                                 err.status_code = 404;
                             }
                             res.fluent_rest = {
@@ -228,7 +233,7 @@ class entity_builder {
                                 error: err,
                                 links: [],
                                 name: mp.resource_name,
-                                uri: `${uri}/${req.params.id}/`
+                                uri: `${uri}/${id}/`
                             };
                             middleware_chainer(0, req, res);
                         });
@@ -268,7 +273,7 @@ class entity_builder {
             }
             query = query.limit(page_count);
 
-            let _uri = req.params.id ? `${uri}/${req.params.id}/` : `${uri}/`;
+            let _uri = req.params.id ? `${uri}/${id}/` : `${uri}/`;
 
             if (!this.resource.pagination) {
                 query.rows((err, rows) => {
@@ -324,14 +329,16 @@ class entity_builder {
         };
 
         router.get('/', handler);
-        router.get('/:id', handler);
+        router.get(`/:${id_name}`, handler);
 
-        router.put('/:id', (req, rest, next) => {
+        router.put(`/:${id_name}`, (req, rest, next) => {
             if (!is_allowed(req, res)) return;
+
+            let id = req.params[id_name];
 
             this._db.select()
                 .from(this.entity('get-id', req))
-                .where(this._primary_key, req.params.id)
+                .where(this._primary_key, id)
                 .rows((err, rows) => {
                     if (err) {
                         res.fluent_rest = { error: err };
@@ -340,13 +347,13 @@ class entity_builder {
                     }
                     let obj = first(rows);
                     if (!obj) {
-                        let error = new Error(`No resource exists at ${uri}/${req.params.id}/.`);
+                        let error = new Error(`No resource exists at ${uri}/${id}/.`);
                         error.status_code = 404;
                         res.fluent_rest = { error };
                         middleware_chainer(0, req, res);
                     } else {
                         this._db.update(this.entity('put', req), req.body)
-                            .where(this._primary_key, req.params.id)
+                            .where(this._primary_key, id)
                             .returning(select_fields(req.query.fields))
                             .row((err, row) => {
                                 if (err) err.status_code = 500;
@@ -355,7 +362,7 @@ class entity_builder {
                                     error: err,
                                     links: [],
                                     name: mp.resource_name,
-                                    uri: `${uri}/${req.params.id}/`
+                                    uri: `${uri}/${id}/`
                                 };
                                 middleware_chainer(0, req, res);
                             });
@@ -363,12 +370,14 @@ class entity_builder {
                 });
         });
 
-        router.patch('/:id', (req, rest, next) => {
+        router.patch(`/:${id_name}`, (req, rest, next) => {
             if (!is_allowed(req, res)) return;
+
+            let id = req.params[id_name];
 
             this._db.select()
                 .from(this.entity('get-id', req))
-                .where(this._primary_key, req.params.id)
+                .where(this._primary_key, id)
                 .rows((err, rows) => {
                     if (err) {
                         res.fluent_rest = { error: err };
@@ -377,7 +386,7 @@ class entity_builder {
                     }
                     let obj = first(rows);
                     if (!obj) {
-                        let error = new Error(`No resource exists at ${uri}/${req.params.id}/.`);
+                        let error = new Error(`No resource exists at ${uri}/${id}/.`);
                         error.status_code = 404;
                         res.fluent_rest = { error };
                         middleware_chainer(0, req, res);
@@ -389,7 +398,7 @@ class entity_builder {
                             obj = patches;
                         }
                         this._db.update(this.entity('patch', req), obj)
-                            .where(this._primary_key, req.params.id)
+                            .where(this._primary_key, id)
                             .returning(select_fields(req.query.fields))
                             .row((err, row) => {
                                 if (err) err.status_code = 500;
@@ -398,7 +407,7 @@ class entity_builder {
                                     error: err,
                                     links: [],
                                     name: mp.resource_name,
-                                    uri: `${uri}/${req.params.id}/`
+                                    uri: `${uri}/${id}/`
                                 };
                                 middleware_chainer(0, req, res);
                             });
@@ -449,11 +458,13 @@ class entity_builder {
             });
         });
 
-        router.delete('/:id', (req, res) => {
+        router.delete(`/:${id_name}`, (req, res) => {
             if (!is_allowed(req, res)) return;
 
+            let id = req.params[id_name];
+
             this._db.delete(this.entity('del', req))
-                .where(this._primary_key, req.params.id)
+                .where(this._primary_key, id)
                 .run((err) => {
                     if (err) err.status_code = 500;
                     res.fluent_rest = {
@@ -462,7 +473,7 @@ class entity_builder {
                         links: [],
                         status_code: 204,
                         name: mp.resource_name,
-                        uri: `${uri}/${req.params.id}/` 
+                        uri: `${uri}/${id}/` 
                     };
                     middleware_chainer(0, req, res);
                 });
