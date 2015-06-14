@@ -1,6 +1,5 @@
 let url = require('url');
 let hal = require('hal');
-let express = require('express');
 let pluralize = require('pluralize');
 let debug = require('debug')('rest-service-builder');
 
@@ -10,6 +9,18 @@ function first(x) {
 
 function last(x) {
     return x && x.length > 0 ? x[x.length - 1] : null;
+}
+
+function uri_append(l, r) {
+    let uri = l;
+    if (!uri.endsWith('/') && !r.startsWith('/'))
+        uri += '/';
+    uri += r;
+    return uri;
+}
+
+function expand_tokens(s, values) {
+    return s.replace(/\{(\w+)\}/g, (match, id) => values[id]);
 }
 
 export function hal_formatter(req, res, next) {
@@ -75,9 +86,15 @@ export function links_header_formatter(req, res, next) {
 };
 
 class endpoint {
-    constructor(router, links) {
+    constructor(router, links, uri, id_name) {
         this._router = router;
         this._links = links || [];
+        this._id_name = id_name;
+        this._uri = uri;
+    }
+
+    get uri() {
+        return this._uri;
     }
 
     get router() {
@@ -86,6 +103,10 @@ class endpoint {
 
     get links() {
         return this._links;
+    }
+
+    get id_name() {
+        return this._id_name;
     }
 }
 
@@ -156,19 +177,33 @@ class entity_builder {
         return this._entity;
     }
 
-    endpoint() {
-        let links = [];
-        let router = express.Router();
+    _get_uri() {
         let mp = this.resource.mount_point;
-        let base_uri = mp.uri;
-        if (!base_uri.endsWith('/'))
-            base_uri += '/';
-        let uri = url.resolve(base_uri, mp.resource_name);
+        let routers = [];
+        let current = mp.router;
+        while (current) {
+            routers.unshift(current);
+            if (!mp.router.fluent_rest) break;
+            current = mp.router.fluent_rest.endpoint.router;
+        }
+        var uri = '';
+        for (let i = 0; i < routers.length; i++) {
+            if (i > 0)
+                uri = uri_append(uri, '{' + routers[i - 1].id_name + '}');
+            uri = uri_append(uri, routers[i].uri);
+        }
+        return uri;
+    }
+
+    endpoint(router) {
+        let links = [];
+        let mp = this.resource.mount_point;
+        let uri = this._get_uri();
         let singular = pluralize.singular(mp.resource_name);
         let id_name = `${singular}_id`;
 
         links.push({ name: mp.resource_name, url: { href: `${uri}/` }});
-        links.push({ name: singular, url: { href: `${uri}/{id}/`, templated: true }});
+        links.push({ name: singular, url: { href: `${uri}/{${id_name}}/`, templated: true }});
         if (this._full_text_entity)
             links.push({ name: `${singular}_search`, url: { href: `${uri}/{?q}`, templated: true }});
 
@@ -225,7 +260,7 @@ class entity_builder {
                         .where(this._primary_key, id)
                         .rows((err, rows) => {
                             if (!err && (!rows || rows.length === 0)) {
-                                err = new Error(`No resource exists at ${uri}/${id}/.`);
+                                err = new Error(`No resource exists at ${expand_tokens(uri, req.params)}/${id}/.`);
                                 err.status_code = 404;
                             }
                             res.fluent_rest = {
@@ -233,7 +268,7 @@ class entity_builder {
                                 error: err,
                                 links: [],
                                 name: mp.resource_name,
-                                uri: `${uri}/${id}/`
+                                uri: `${expand_tokens(uri, req.params)}/${id}/`
                             };
                             middleware_chainer(0, req, res);
                         });
@@ -273,7 +308,7 @@ class entity_builder {
             }
             query = query.limit(page_count);
 
-            let _uri = req.params.id ? `${uri}/${id}/` : `${uri}/`;
+            let _uri = req.params.id ? `${expand_tokens(uri, req.params)}/${id}/` : `${expand_tokens(uri, req.params)}/`;
 
             if (!this.resource.pagination) {
                 query.rows((err, rows) => {
@@ -347,7 +382,7 @@ class entity_builder {
                     }
                     let obj = first(rows);
                     if (!obj) {
-                        let error = new Error(`No resource exists at ${uri}/${id}/.`);
+                        let error = new Error(`No resource exists at ${expand_tokens(uri, req.params)}/${id}/.`);
                         error.status_code = 404;
                         res.fluent_rest = { error };
                         middleware_chainer(0, req, res);
@@ -362,7 +397,7 @@ class entity_builder {
                                     error: err,
                                     links: [],
                                     name: mp.resource_name,
-                                    uri: `${uri}/${id}/`
+                                    uri: `${expand_tokens(uri, req.params)}/${id}/`
                                 };
                                 middleware_chainer(0, req, res);
                             });
@@ -386,7 +421,7 @@ class entity_builder {
                     }
                     let obj = first(rows);
                     if (!obj) {
-                        let error = new Error(`No resource exists at ${uri}/${id}/.`);
+                        let error = new Error(`No resource exists at ${expand_tokens(uri, req.params)}/${id}/.`);
                         error.status_code = 404;
                         res.fluent_rest = { error };
                         middleware_chainer(0, req, res);
@@ -407,7 +442,7 @@ class entity_builder {
                                     error: err,
                                     links: [],
                                     name: mp.resource_name,
-                                    uri: `${uri}/${id}/`
+                                    uri: `${expand_tokens(uri, req.params)}/${id}/`
                                 };
                                 middleware_chainer(0, req, res);
                             });
@@ -426,7 +461,7 @@ class entity_builder {
                         rows: [row],
                         error: err,
                         links: [],
-                        uri: `${uri}/`,
+                        uri: `${expand_tokens(uri, req.params)}/`,
                         status_code: 201,
                         name: mp.resource_name
                     };
@@ -450,7 +485,7 @@ class entity_builder {
                     rows: [],
                     error: err,
                     links: [],
-                    uri: `${uri}/`,
+                    uri: `${expand_tokens(uri, req.params)}/`,
                     status_code: 204,
                     name: mp.resource_name
                 };
@@ -473,7 +508,7 @@ class entity_builder {
                         links: [],
                         status_code: 204,
                         name: mp.resource_name,
-                        uri: `${uri}/${id}/` 
+                        uri: `${expand_tokens(uri, req.params)}/${id}/` 
                     };
                     middleware_chainer(0, req, res);
                 });
@@ -481,7 +516,14 @@ class entity_builder {
 
         mp.router.use(uri, router);
 
-        return new endpoint(router, links);
+        let ep = new endpoint(
+            router,
+            links,
+            url_append(mp.uri, mp.resource_name),
+            id_name);
+        mp.router.fluent_rest = { endpoint: ep };
+
+        return ep;
     }
 }
 
