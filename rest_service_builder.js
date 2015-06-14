@@ -13,6 +13,7 @@ function last(x) {
 
 function uri_append(l, r) {
     let uri = l;
+    if (!r) return uri;
     if (!uri.endsWith('/') && !r.startsWith('/'))
         uri += '/';
     uri += r;
@@ -198,7 +199,11 @@ class entity_builder {
     endpoint(router) {
         let links = [];
         let mp = this.resource.mount_point;
+        let mount_uri = uri_append(mp.uri, mp.resource_name);
         let uri = this._get_uri();
+        if (!uri || uri.length === 0) {
+            uri = mount_uri;
+        }
         let singular = pluralize.singular(mp.resource_name);
         let id_name = `${singular}_id`;
 
@@ -514,13 +519,9 @@ class entity_builder {
                 });
         });
 
-        mp.router.use(uri, router);
+        mp.router.use(mount_uri, router);
 
-        let ep = new endpoint(
-            router,
-            links,
-            url_append(mp.uri, mp.resource_name),
-            id_name);
+        let ep = new endpoint(router, links, mount_uri, id_name);
         mp.router.fluent_rest = { endpoint: ep };
 
         return ep;
