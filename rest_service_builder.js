@@ -573,9 +573,7 @@ class verbs_builder {
         return this;
     }
 
-    endpoint() {
-        let router = express.Router();
-
+    endpoint(router) {
         if (this._get) router.get(this._get);
         if (this._put) router.put(this._put);
         if (this._patch) router.patch(this._patch);
@@ -583,11 +581,50 @@ class verbs_builder {
         if (this._del) router.del(this._del);
 
         let mp = this.resource.mount_point;
-        mp.router.use(
-            url.resolve(mp.uri, mp.resource_name),
-            router);
+        let mount_uri = uri_append(mp.uri, mp.resource_name);
+        let singular = pluralize.singular(mp.resource_name);
+        let id_name = `${singular}_id`;
+        let ep = new endpoint(router, links, mount_uri, id_name);
+        mp.router.fluent_rest = { endpoint: ep };
 
-        return new endpoint(routeri, this._links);
+        return ep;
+    }
+}
+
+class endpoints_builder {
+    constructor(endpoints, resource) {
+        this._endpoints = endpoints;
+        this._resource = resource;
+    }
+
+    get resource() {
+        return this._resource;
+    }
+
+    get endpoints() {
+        return this._endpoints;
+    }
+
+    endpoint(router) {
+        let mp = this.resource.mount_point;
+        let mount_uri = uri_append(mp.uri, mp.resource_name);
+        let singular = pluralize.singular(mp.resource_name);
+        let id_name = `${singular}_id`;
+        let ep = new endpoint(router, links, mount_uri, id_name);
+        mp.router.fluent_rest = { endpoint: ep };
+
+        router.get('/', (req, res) => {
+            let links = [];
+            for (let x in this._endpoints) {
+                links = links.concat(x.links);
+            }
+            res.fluent_rest = {
+                links: links
+            };
+            middleware_chainer(0, req, res);
+        });
+
+        return ep;
     }
 }
 
@@ -642,12 +679,11 @@ class resource_builder {
 
     for_endpoints(endpoints) {
         this._supports_pagination = false;
-        // XXX: This is what creates something like the /api/v1/ root resource from a list
-        //      of already created endpoints.
+        return new endpoints_builder(endpoints, this);
     }
 
-    for_entity(conn_str, entity) {
-        return new entity_builder(conn_str, entity, this);
+    for_entity(db, entity) {
+        return new entity_builder(db, entity, this);
     }
 
     for_verbs() {
