@@ -54,9 +54,18 @@ class hal_client {
 }
 
 class resource_proxy {
-    constructor(client, name, parent) {
+    constructor(client, name, parent, actions) {
         this._name = name;
         this._children = [];
+        this._actions = actions || {
+            find: true,
+            create: true,
+            update: true,
+            patch: true,
+            delete: true,
+            find_by_id: true,
+            find_by_named_query: true
+        };
         this._client = client;
         this._parent = parent || null;
         this._singular_name = pluralize.singular(name);
@@ -79,7 +88,13 @@ class resource_proxy {
         return this._singular_name;
     }
 
+    _throw_if_disabled(action) {
+        if (!this._actions[action])
+            throw new Error(`This resource does not permit '${action}'.`);
+    }
+
     find(params) {
+        this._throw_if_disabled('find');
         return new Promise((resolve, reject) => {
             this.client
                 .api
@@ -91,6 +106,7 @@ class resource_proxy {
     }
 
     create(data) {
+        this._throw_if_disabled('create');
         return new Promise((resolve, reject) => {
             this.client
                 .api
@@ -101,6 +117,7 @@ class resource_proxy {
     }
 
     find_by_id(id) {
+        this._throw_if_disabled('find_by_id');
         let params = {};
         params[this._id_name] = id;
         return new Promise((resolve, reject) => {
@@ -114,6 +131,7 @@ class resource_proxy {
     }
 
     patch(id, data) {
+        this._throw_if_disabled('patch');
         let params = {};
         params[this._id_name] = id;
         return new Promise((resolve, reject) => {
@@ -127,6 +145,7 @@ class resource_proxy {
     }
 
     delete(filters) {
+        this._throw_if_disabled('delete');
         let params = {};
         params[this._id_name] = id;
         return new Promise((resolve, reject) => {
@@ -141,6 +160,7 @@ class resource_proxy {
     }
 
     delete_by_id(id) {
+        this._throw_if_disabled('delete_by_id');
         let params = {};
         params[this._id_name] = id;
         return new Promise((resolve, reject) => {
@@ -154,6 +174,7 @@ class resource_proxy {
     }
 
     update(id, data) {
+        this._throw_if_disabled('update');
         let params = {};
         params[this._id_name] = id;
         return new Promise((resolve, reject) => {
@@ -167,6 +188,7 @@ class resource_proxy {
     }
 
     find_by_named_query(name) {
+        this._throw_if_disabled('find_by_named_query');
         let params = {};
         params[this._id_name] = name;
         return new Promise((resolve, reject) => {
@@ -263,7 +285,7 @@ class root_resource_builder {
         function make_client(parent, resources) {
             if (!parent || !resources || resources.length === 0) return;
             resources.forEach(x => {
-                let proxy = new resource_proxy(h, x.name, parent);
+                let proxy = new resource_proxy(h, x.name, parent, x._actions);
                 make_client(proxy, x._children);
                 parent[x.name] = proxy;
             });
