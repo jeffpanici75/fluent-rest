@@ -3,6 +3,9 @@ let hal = require('hal');
 let pluralize = require('pluralize');
 let debug = require('debug')('rest-service-builder');
 
+// XXX: Allow specifying "optimistic locking column", default to "hash" or something
+//      Change put/patch/delete to verify optimistic locking is equal coming in on etag header.
+
 function first(x) {
     return x && x.length > 0 ? x[0] : null;
 }
@@ -208,9 +211,7 @@ class entity_builder {
         let id_name = `${singular}_id`;
 
         links.push({ name: mp.resource_name, url: { href: `${uri}/` }});
-        links.push({ name: singular, url: { href: `${uri}/{${id_name}}/`, templated: true }});
-        if (this._full_text_entity)
-            links.push({ name: `${singular}_search`, url: { href: `${uri}/{?q}`, templated: true }});
+        // XXX: Add links for children of this resource
 
         let is_allowed = (req, res) => {            
             if (this._verbs[req.method.toLowerCase()]) return true;
@@ -281,6 +282,8 @@ class entity_builder {
                 }
             }
 
+            // XXX: SQL injection?  Is there an existing node library for that?
+            //
             let fields = select_fields(req.query.fields);
             let count_query, query = null;
 
@@ -375,7 +378,10 @@ class entity_builder {
             if (!is_allowed(req, res)) return;
 
             let id = req.params[id_name];
+            // XXX: throw if no id
 
+            // XXX: Do we really need the query here or should we just map
+            //      the sql error/update count.
             this._db.select()
                 .from(this.entity('get-id', req))
                 .where(this._primary_key, id)
@@ -392,7 +398,8 @@ class entity_builder {
                         res.fluent_rest = { error };
                         middleware_chainer(0, req, res);
                     } else {
-                        this._db.update(this.entity('put', req), req.body)
+                        this._db
+                            .update(this.entity('put', req), req.body)
                             .where(this._primary_key, id)
                             .returning(select_fields(req.query.fields))
                             .row((err, row) => {
@@ -415,6 +422,7 @@ class entity_builder {
 
             let id = req.params[id_name];
 
+            // XXX: Restruct this so that the JSONPatch path is seperate from the more simplistic update
             this._db.select()
                 .from(this.entity('get-id', req))
                 .where(this._primary_key, id)

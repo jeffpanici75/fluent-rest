@@ -94,6 +94,7 @@ class resource_proxy {
     }
 
     find(params) {
+        // XXX: Enhance params so that array of values is possible
         this._throw_if_disabled('find');
         return new Promise((resolve, reject) => {
             this.client
