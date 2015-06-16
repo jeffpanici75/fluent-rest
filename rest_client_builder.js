@@ -42,6 +42,15 @@ class hal_client {
                 .getResource((error, resource) => error ? reject(error) : resolve(resource)); 
         });
     }
+
+    resource_at(href) {
+        return new Promise((resolve, reject) => {
+            this.api
+                .newRequest()
+                .from(url.resolve(this.api.getFrom(), href))
+                .getResource((error, resource) => error ? reject(error) : resolve(resource)); 
+        });
+    }
 }
 
 class resource_proxy {
@@ -251,15 +260,17 @@ class root_resource_builder {
     hal() {
         let h = new hal_client();
 
-        function make_client(client, resources) {
-            if (!client || !resources || resources.length === 0) return;
-            for (let x in resources) {
-                let proxy = new resource_proxy(h, x.name, client);
+        function make_client(parent, resources) {
+            debug('resources.length = ' + resources.length);
+            if (!parent || !resources || resources.length === 0) return;
+            resources.forEach(x => {
+                let proxy = new resource_proxy(h, x.name, parent);
                 make_client(proxy, x._children);
-                client[x.name] = proxy;
-            }
+                parent[x.name] = proxy;
+            });
         }
 
+        debug('this._children = ' + this._children);
         make_client(h, this._children);
 
         return h;
