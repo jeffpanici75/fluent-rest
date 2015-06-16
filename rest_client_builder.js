@@ -7,16 +7,6 @@ let debug = require('debug')('rest-client-builder');
 
 traverson.registerMediaType(hal_adapter.mediaType, hal_adapter);
 
-let builder = new rest_client_builder();
-
-let root = builder.root();
-let accounts = root.resource('accounts');
-accounts.resource('properties');
-accounts.resource('addresses');
-accounts.resource('phones');
-
-let api = root.hal();
-
 class hal_client {
     constructor() {
         this._uri = null;
@@ -30,16 +20,24 @@ class hal_client {
             .jsonHal()
             .withRequestOptions({
                 headers: {
-                    'Accept': 'application/json',
+                    'Accept': 'application/hal+json',
                     'Content-Type': 'application/json'
                 }
             });
          return this;
     }
 
+    get uri() {
+        return this._uri;
+    }
+
+    get api() {
+        return this._api;
+    }
+
     root() {
         return new Promise((resolve, reject) => {
-            this._api
+            this.api
                 .newRequest()
                 .getResource((error, resource) => error ? reject(error) : resolve(resource)); 
         });
@@ -47,35 +45,129 @@ class hal_client {
 }
 
 class resource_proxy {
-    constructor(api, name, parent) {
-        this._api = api;
+    constructor(client, name, parent) {
         this._name = name;
         this._children = [];
+        this._client = client;
         this._parent = parent || null;
+        this._singular_name = pluralize.singular(name);
+        this._id_name = `${this._singular_name}_id`;
+    }
+
+    get name() {
+        return this._name;
+    }
+
+    get client() {
+        return this._client;
+    }
+
+    get parent() {
+        return this._parent;
+    }
+
+    get singular_name() {
+        return this._singular_name;
     }
 
     find(params) {
+        return new Promise((resolve, reject) => {
+            this.client
+                .api
+                .newRequest()
+                .withRequestOptions({ qs: params || {} })
+                .follow(this.name)
+                .getResource((error, resource) => error ? reject(error) : resolve(resource)); 
+        });
     }
 
     create(data) {
+        return new Promise((resolve, reject) => {
+            this.client
+                .api
+                .newRequest()
+                .follow(this.name)
+                .post(data, (error, response) => error ? reject(error) : resolve(response));
+        });
     }
 
     find_by_id(id) {
+        let params = {};
+        params[this._id_name] = id;
+        return new Promise((resolve, reject) => {
+            this.client
+                .api
+                .newRequest()
+                .follow(this.singular_name)
+                .withTemplateParameters(params)
+                .getResource((error, resource) => error ? reject(error) : resolve(resource));
+        });
     }
 
     patch(id, data) {
+        let params = {};
+        params[this._id_name] = id;
+        return new Promise((resolve, reject) => {
+            this.client
+                .api
+                .newRequest()
+                .follow(this.singular_name)
+                .withTemplateParameters(params)
+                .patch(data, (error, response) => error ? reject(error) : resolve(response));
+        });
     }
 
     delete(filters) {
+        let params = {};
+        params[this._id_name] = id;
+        return new Promise((resolve, reject) => {
+            this.client
+                .api
+                .newRequest()
+                .withRequestOptions({ qs: filters || {} })
+                .follow(this.name)
+                .withTemplateParameters(params)
+                .del((error, response) => error ? reject(error) : resolve(response));
+        });
     }
 
     delete_by_id(id) {
+        let params = {};
+        params[this._id_name] = id;
+        return new Promise((resolve, reject) => {
+            this.client
+                .api
+                .newRequest()
+                .follow(this.singular_name)
+                .withTemplateParameters(params)
+                .del((error, response) => error ? reject(error) : resolve(response));
+        });
     }
 
     update(id, data) {
+        let params = {};
+        params[this._id_name] = id;
+        return new Promise((resolve, reject) => {
+            this.client
+                .api
+                .newRequest()
+                .follow(this.singular_name)
+                .withTemplateParameters(params)
+                .put(data, (error, response) => error ? reject(error) : resolve(response));
+        });
     }
 
     find_by_named_query(name) {
+        let params = {};
+        params[this._id_name] = name;
+        return new Promise((resolve, reject) => {
+            this.client
+                .api
+                .newRequest()
+                .follow(this.name)
+                .withTemplateParameters(params)
+                .getResource((error, resource) => error ? reject(error) : resolve(resource));
+        });
     }
 }
 
@@ -157,12 +249,20 @@ class root_resource_builder {
     }
 
     hal() {
-        let client = new hal_client();
+        let h = new hal_client();
 
-        for (let x in this._children)
-            client[x.name] = new resource_proxy(x.name);
+        function make_client(client, resources) {
+            if (!client || !resources || resources.length === 0) return;
+            for (let x in resources) {
+                let proxy = new resource_proxy(h, x.name, client);
+                make_client(proxy, x._children);
+                client[x.name] = proxy;
+            }
+        }
 
-        return client;
+        make_client(h, this._children);
+
+        return h;
     }
 
     resource(name) {
