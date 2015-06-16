@@ -261,7 +261,6 @@ class root_resource_builder {
         let h = new hal_client();
 
         function make_client(parent, resources) {
-            debug('resources.length = ' + resources.length);
             if (!parent || !resources || resources.length === 0) return;
             resources.forEach(x => {
                 let proxy = new resource_proxy(h, x.name, parent);
@@ -270,7 +269,6 @@ class root_resource_builder {
             });
         }
 
-        debug('this._children = ' + this._children);
         make_client(h, this._children);
 
         return h;
