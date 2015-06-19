@@ -90,15 +90,24 @@ export function links_header_formatter(req, res, next) {
 };
 
 class endpoint {
-    constructor(router, links, uri, id_name) {
-        this._router = router;
-        this._links = links || [];
-        this._id_name = id_name;
+    constructor(name, router, links, uri, id_name) {
         this._uri = uri;
+        this._name = name;
+        this._router = router;
+        this._id_name = id_name;
+        this._links = links || [];
     }
 
     get uri() {
         return this._uri;
+    }
+
+    get name() {
+        return this._name;
+    }
+
+    get parent() { 
+        return this.router.fluent_rest ? this.router.fluent_rest.parent : null;
     }
 
     get router() {
@@ -114,12 +123,58 @@ class endpoint {
     }
 }
 
+class constraint_builder {
+    constructor(name, entity) {
+        this._name = name;
+        this._error = null;
+        this._entity = entity;
+    }
+
+    get name() {
+        return this._name;
+    }
+
+    get entity() {
+        return this._entity;
+    }
+
+    throws_error(error) {
+        this._error = error;
+        return this;
+    }
+}
+
+class full_text_builder {
+    constructor(name, entity) {
+        this._name = name;
+        this._entity = entity;
+        this._field = 'document';
+    }
+
+    get name() {
+        return this._name;
+    }
+
+    get entity() {
+        return this._entity;
+    }
+
+    get field() {
+        return this._field;
+    }
+
+    use_field(field) {
+        this._field = field;
+    }
+}
+
 class entity_builder {
     constructor(db, entity, resource) {
         this._db = db;
         this._entity = entity;
         this._constraints = {};
         this._primary_key = 'id';
+        this._foreign_key = null;
         this._resource = resource;
         this._full_text_entity = null;
         this._verbs = { get: true, put: true, patch: true, post: true, delete: true };
@@ -160,19 +215,25 @@ class entity_builder {
         return this;
     }
 
+    foreign_key(fk) {
+        this._foreign_key = fk;
+        return this;
+    }
+
     reserve(field) {
         this._reserved[field] = true;
         return this;
     }
 
-    on_constraint_violation(name, error) {
-        this._constraints[name] = error;
-        return this;
+    for_constraint(name) {
+        let builder = new constraint_builder(name, this);
+        this._constraints[name] = builder; 
+        return builder;
     }
 
-    uses_full_text_entity(name, field) {
-        this._full_text_entity = { name, field: field || 'document' };
-        return this;
+    for_full_text(name) {
+        this._full_text_entity = new full_text_builder(name, this);
+        return this._full_text_entity;
     }
 
     entity(use, req) {
@@ -181,34 +242,51 @@ class entity_builder {
         return this._entity;
     }
 
-    _get_uri() {
-        let mp = this.resource.mount_point;
-        let routers = [];
-        let current = mp.router;
+    _get_uri(endpoint) {        
+        let endpoints = [];
+        let current = endpoint;
         while (current) {
-            routers.unshift(current);
-            if (!mp.router.fluent_rest) break;
-            current = mp.router.fluent_rest.endpoint.router;
+            endpoints.push(current);
+            current = current.parent ? 
+                (current.parent.fluent_rest ? current.parent.fluent_rest.endpoint : null) : 
+                null;
         }
         var uri = '';
-        for (let i = 0; i < routers.length; i++) {
-            if (i > 0)
-                uri = uri_append(uri, '{' + routers[i - 1].id_name + '}');
-            uri = uri_append(uri, routers[i].uri);
-        }
+        endpoints.forEach(x => {
+            uri = uri_append(uri, x.uri);
+            uri = uri_append(uri, '{' + x.id_name + '}');
+        });
         return uri;
     }
 
-    endpoint(router) {
-        let links = [];
+    _get_mount_uri() {
         let mp = this.resource.mount_point;
+        let ep = mp.endpoint;
         let mount_uri = uri_append(mp.uri, mp.resource_name);
-        let uri = this._get_uri();
-        if (!uri || uri.length === 0) {
-            uri = mount_uri;
+        if (ep) {
+            return uri_append(`/:${ep.id_name}`, mount_uri);        
         }
+        return mount_uri;
+    }
+
+    endpoint(router) {
+        let mp = this.resource.mount_point;
+        router.fluent_rest = {
+            endpoint: null,
+            parent: mp.router
+        };
+
+        let links = [];
+        let mount_uri = this._get_mount_uri();
+        let path = uri_append(mp.uri, mp.resource_name);
+        let uri = uri_append(this._get_uri(mp.endpoint), path);
         let singular = pluralize.singular(mp.resource_name);
         let id_name = `${singular}_id`;
+
+        let fk = null;
+        if (mp.endpoint) {
+            fk = this._foreign_key || mp.endpoint.id_name;
+        }
 
         links.push({ name: mp.resource_name, url: { href: `${uri}/` }});
         // XXX: Add links for children of this resource
@@ -308,6 +386,11 @@ class entity_builder {
             if (Object.keys(filters).length > 0) {
                 query = query.where(filters);
                 count_query = count_query.where(filters);
+            }
+
+            if (fk) {
+                query = query.and(fk, req.params[mp.endpoint.id_name]);
+                count_query = count_query.and(fk, req.params[mp.endpoint.id_name]);
             }
 
             let page_count = parseInt(req.query.page_count || this.resource.page_count);
@@ -527,10 +610,13 @@ class entity_builder {
                 });
         });
 
-        mp.router.use(mount_uri, router);
+        debug('path = ' + path);
+        debug('mount_uri = ' + mount_uri);
+        debug('uri = ' + uri);
+        let ep = new endpoint(mp.resource_name, router, links, path, id_name);
 
-        let ep = new endpoint(router, links, mount_uri, id_name);
-        mp.router.fluent_rest = { endpoint: ep };
+        mp.router.use(mount_uri, router);
+        router.fluent_rest.endpoint = ep;
 
         return ep;
     }
@@ -721,6 +807,12 @@ class mount_point_builder {
 
     get resource_name() {
         return this._resource_name;
+    }
+
+    get endpoint() {
+        if (!this.router || !this.router.fluent_rest)
+            return null;
+        return this.router.fluent_rest.endpoint;
     }
 
     resource(name) {
