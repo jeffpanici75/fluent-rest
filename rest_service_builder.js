@@ -461,7 +461,7 @@ class entity_builder {
         router.get('/', handler);
         router.get(`/:${id_name}`, handler);
 
-        router.put(`/:${id_name}`, (req, rest, next) => {
+        router.put(`/:${id_name}`, (req, res, next) => {
             if (!is_allowed(req, res)) return;
 
             let id = req.params[id_name];
@@ -504,7 +504,7 @@ class entity_builder {
                 });
         });
 
-        router.patch(`/:${id_name}`, (req, rest, next) => {
+        router.patch(`/:${id_name}`, (req, res, next) => {
             if (!is_allowed(req, res)) return;
 
             let id = req.params[id_name];
@@ -754,7 +754,13 @@ class endpoints_builder {
         router.get('/', (req, res) => {
             let links = [];
             this._endpoints.forEach(x => {
-                links.push({ name: x.name, url: { href: x.uri }});
+                links.push({
+                    name: x.name,
+                    url: {
+                        href: `${x.uri}{/${x.id_name}}`,
+                        templated: true
+                    }
+                });
             });
             res.fluent_rest = { 
                 rows: [], 

@@ -8,12 +8,7 @@ let debug = require('debug')('rest-client-builder');
 traverson.registerMediaType(hal_adapter.mediaType, hal_adapter);
 
 function json(res) {
-    try {
-        return res && res.body ? JSON.parse(res.body) : null;
-    }
-    catch(e) {
-        return null;
-    }
+    return res && res.body ? JSON.parse(res.body) : null;
 }
 
 class hal_client {
@@ -74,6 +69,7 @@ class resource_proxy {
             patch: true,
             delete: true,
             find_by_id: true,
+            delete_by_id: true,
             find_by_named_query: true
         };
         this._client = client;
@@ -222,6 +218,7 @@ class resource_builder {
             patch: true,
             delete: true,
             find_by_id: true,
+            delete_by_id: true,
             find_by_named_query: true
         };
         this._children = [];
@@ -275,6 +272,11 @@ class resource_builder {
 
     disable_find_by_id() {
         this._actions.find_by_id = false;
+        return this;
+    }
+
+    disable_delete_by_id() {
+        this._actions.delete_by_id = false;
         return this;
     }
 
