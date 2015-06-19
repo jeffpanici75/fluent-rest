@@ -24,7 +24,7 @@ function uri_append(l, r) {
 }
 
 function expand_tokens(s, values) {
-    return s.replace(/\{(\w+)\}/g, (match, id) => values[id]);
+    return s.replace(/\{(\w+)\}/g, (match, id) => values[id] ? values[id] : match);
 }
 
 export function hal_formatter(req, res, next) {
@@ -49,13 +49,17 @@ export function hal_formatter(req, res, next) {
     }
     res.format({
         'application/hal+json': function() {
-            res.fluent_rest.links.forEach((x) => resource.link(x.name, x.url));
+            res.fluent_rest.links.forEach((x) => {
+                let copy = Object.assign({}, x.url);
+                copy.href = expand_tokens(copy.href, req.params);
+                resource.link(x.name, copy);
+            });
             res.type('application/hal+json').status(status_code).send(resource.toJSON());
             next();
         },
 
         'application/hal+xml': function() {
-            function escapeXml(unsafe) {
+            function escape_xml(unsafe) {
                 return unsafe.replace(/[<>&'"]/g, function (c) {
                     switch (c) {
                         case '<': return '&lt;';
@@ -67,8 +71,10 @@ export function hal_formatter(req, res, next) {
                 });
             }            
             res.fluent_rest.links.forEach((x) => {
-                x.url.href = escapeXml(x.url.href);
-                resource.link(x.name, x.url);
+                let copy = Object.assign({}, x.url);
+                copy.href = escape_xml(copy.href);
+                copy.href = expand_tokens(copy.href, req.params);
+                resource.link(x.name, copy);
             });
             res.type('application/hal+xml').status(status_code).send(resource.toXML());
             next();
@@ -276,7 +282,6 @@ class entity_builder {
             parent: mp.router
         };
 
-        let links = [];
         let mount_uri = this._get_mount_uri();
         let path = uri_append(mp.uri, mp.resource_name);
         let uri = uri_append(this._get_uri(mp.endpoint), path);
@@ -287,9 +292,6 @@ class entity_builder {
         if (mp.endpoint) {
             fk = this._foreign_key || mp.endpoint.id_name;
         }
-
-        links.push({ name: mp.resource_name, url: { href: `${uri}/` }});
-        // XXX: Add links for children of this resource
 
         let is_allowed = (req, res) => {            
             if (this._verbs[req.method.toLowerCase()]) return true;
@@ -350,8 +352,8 @@ class entity_builder {
                             res.fluent_rest = {
                                 rows: rows ? rows : [],
                                 error: err,
-                                links: [],
                                 name: mp.resource_name,
+                                links: router.fluent_rest.endpoint.links,
                                 uri: `${expand_tokens(uri, req.params)}/${id}/`
                             };
                             middleware_chainer(0, req, res);
@@ -404,12 +406,12 @@ class entity_builder {
             if (!this.resource.pagination) {
                 query.rows((err, rows) => {
                     res.fluent_rest = {
-                        rows: rows ? rows : [],
+                        uri: _uri,
                         error: err,
-                        links: [],
-                        name: mp.resource_name,
                         pagination: {},
-                        uri: _uri 
+                        rows: rows ? rows : [],
+                        name: mp.resource_name,
+                        links: router.fluent_rest.endpoint.links,
                     };
                     middleware_chainer(0, req, res);
                 });
@@ -433,12 +435,12 @@ class entity_builder {
                     for (let i = 0; i < number_of_pages; i++) {
                         page_links.push({ name: `pages`, url: { href: `${_uri}?page=${i}&page_count=${page_count}` }});
                     }
-
+                    
                     query.rows((err, rows) => {
                         res.fluent_rest = {
-                            rows: rows ? rows : [],
+                            uri: _uri,
                             error: err,
-                            links: page_links,
+                            rows: rows ? rows : [],
                             name: mp.resource_name,
                             pagination: {
                                 total_count,
@@ -446,7 +448,7 @@ class entity_builder {
                                 page: req.query.page,
                                 page_count: page_count
                             },
-                            uri: _uri 
+                            links: page_links.concat(router.fluent_rest.endpoint.links),
                         };
                         middleware_chainer(0, req, res);
                     });
@@ -549,6 +551,10 @@ class entity_builder {
         router.post('/', (req, res) => {
             if (!is_allowed(req, res)) return;
 
+            if (fk) {
+                req.body[fk] = req.params[mp.endpoint.id_name];
+            }
+
             this._db.insert(this.entity('post', req), req.body)
                 .returning(select_fields(req.query.fields))
                 .row((err, row) => {
@@ -573,6 +579,10 @@ class entity_builder {
             let filters = get_filters(req);
             if (Object.keys(filters).length > 0) {
                 query = query.where(filters);
+            }
+
+            if (fk) {
+                query = query.and(fk, req.params[mp.endpoint.id_name]);
             }
 
             query.run((err) => {
@@ -610,13 +620,15 @@ class entity_builder {
                 });
         });
 
-        debug('path = ' + path);
-        debug('mount_uri = ' + mount_uri);
-        debug('uri = ' + uri);
+        let links = [];
         let ep = new endpoint(mp.resource_name, router, links, path, id_name);
 
         mp.router.use(mount_uri, router);
         router.fluent_rest.endpoint = ep;
+        
+        if (mp.endpoint) {
+            mp.endpoint.links.push({ name: mp.resource_name, url: { href: `${uri}/`, templated: true }});
+        }
 
         return ep;
     }

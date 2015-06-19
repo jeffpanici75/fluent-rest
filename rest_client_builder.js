@@ -43,11 +43,12 @@ class hal_client {
         });
     }
 
-    resource_at(href) {
+    resource_at(href, params) {
         return new Promise((resolve, reject) => {
             this.api
                 .newRequest()
                 .from(url.resolve(this.api.getFrom(), href))
+                .withTemplateParameters(params)
                 .getResource((error, resource) => error ? reject(error) : resolve(resource)); 
         });
     }
