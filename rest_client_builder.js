@@ -8,7 +8,12 @@ let debug = require('debug')('rest-client-builder');
 traverson.registerMediaType(hal_adapter.mediaType, hal_adapter);
 
 function json(res) {
-    return res && res.body ? JSON.parse(res.body) : null;
+    try {
+        return res && res.body ? JSON.parse(res.body) : {};
+    }
+    catch(e) {
+        return {};
+    }
 }
 
 class hal_client {
@@ -114,6 +119,8 @@ class resource_proxy {
 
     create(data) {
         this._throw_if_disabled('create');
+        if (!data)
+            throw new Error("The 'data' parameter is required.");
         return new Promise((resolve, reject) => {
             this.client
                 .api
@@ -125,6 +132,8 @@ class resource_proxy {
 
     find_by_id(id) {
         this._throw_if_disabled('find_by_id');
+        if (!id)
+            throw new Error("The 'id' parameter is required.");
         let params = {};
         params[this._id_name] = id;
         return new Promise((resolve, reject) => {
@@ -139,6 +148,10 @@ class resource_proxy {
 
     patch(id, data) {
         this._throw_if_disabled('patch');
+        if (!id)
+            throw new Error("The 'id' parameter is required.");
+        if (!data)
+            throw new Error("The 'data' parameter is required.");
         let params = {};
         params[this._id_name] = id;
         return new Promise((resolve, reject) => {
@@ -167,6 +180,8 @@ class resource_proxy {
 
     delete_by_id(id) {
         this._throw_if_disabled('delete_by_id');
+        if (!id)
+            throw new Error("The 'id' parameter is required.");
         let params = {};
         params[this._id_name] = id;
         return new Promise((resolve, reject) => {
@@ -181,6 +196,10 @@ class resource_proxy {
 
     update(id, data) {
         this._throw_if_disabled('update');
+        if (!id)
+            throw new Error("The 'id' parameter is required.");
+        if (!data)
+            throw new Error("The 'data' parameter is required.");
         let params = {};
         params[this._id_name] = id;
         return new Promise((resolve, reject) => {
@@ -195,6 +214,8 @@ class resource_proxy {
 
     find_by_named_query(name) {
         this._throw_if_disabled('find_by_named_query');
+        if (!name)
+            throw new Error("The 'name' parameter is required.");
         let params = {};
         params[this._id_name] = name;
         return new Promise((resolve, reject) => {
