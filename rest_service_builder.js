@@ -561,13 +561,14 @@ class entity_builder {
                 .returning(select_fields(req.query.fields))
                 .row((err, row) => {
                     if (err) err.status_code = 500;
+                    let id = row ? row[this._primary_key] : null;
                     res.fluent_rest = {
                         rows: [row],
                         error: err,
                         links: [],
-                        uri: `${expand_tokens(uri, req.params)}/`,
                         status_code: 201,
-                        name: mp.resource_name
+                        name: mp.resource_name,
+                        uri: `${expand_tokens(uri, req.params)}/${id}/`
                     };
                     middleware_chainer(mp, 0, req, res);
                 });
@@ -593,9 +594,9 @@ class entity_builder {
                     rows: [],
                     error: err,
                     links: [],
-                    uri: `${expand_tokens(uri, req.params)}/`,
                     status_code: 204,
-                    name: mp.resource_name
+                    name: mp.resource_name,
+                    uri: `${expand_tokens(uri, req.params)}/`
                 };
                 middleware_chainer(mp, 0, req, res);
             });

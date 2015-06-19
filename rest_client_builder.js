@@ -7,6 +7,15 @@ let debug = require('debug')('rest-client-builder');
 
 traverson.registerMediaType(hal_adapter.mediaType, hal_adapter);
 
+function json(res) {
+    try {
+        return res && res.body ? JSON.parse(res.body) : null;
+    }
+    catch(e) {
+        return null;
+    }
+}
+
 class hal_client {
     constructor() {
         this._uri = null;
@@ -114,7 +123,7 @@ class resource_proxy {
                 .api
                 .newRequest()
                 .follow(this.name)
-                .post(data, (error, response) => error ? reject(error) : resolve(response));
+                .post(data, (error, response) => error ? reject(error) : resolve(json(response)));
         });
     }
 
@@ -126,7 +135,7 @@ class resource_proxy {
             this.client
                 .api
                 .newRequest()
-                .follow(this.singular_name)
+                .follow(this.name)
                 .withTemplateParameters(params)
                 .getResource((error, resource) => error ? reject(error) : resolve(resource));
         });
@@ -140,16 +149,15 @@ class resource_proxy {
             this.client
                 .api
                 .newRequest()
-                .follow(this.singular_name)
+                .follow(this.name)
                 .withTemplateParameters(params)
-                .patch(data, (error, response) => error ? reject(error) : resolve(response));
+                .patch(data, (error, response) => error ? reject(error) : resolve(json(response)));
         });
     }
 
     delete(filters) {
         this._throw_if_disabled('delete');
         let params = {};
-        params[this._id_name] = id;
         return new Promise((resolve, reject) => {
             this.client
                 .api
@@ -157,7 +165,7 @@ class resource_proxy {
                 .withRequestOptions({ qs: filters || {} })
                 .follow(this.name)
                 .withTemplateParameters(params)
-                .del((error, response) => error ? reject(error) : resolve(response));
+                .del((error, response) => error ? reject(error) : resolve(json(response)));
         });
     }
 
@@ -169,9 +177,9 @@ class resource_proxy {
             this.client
                 .api
                 .newRequest()
-                .follow(this.singular_name)
+                .follow(this.name)
                 .withTemplateParameters(params)
-                .del((error, response) => error ? reject(error) : resolve(response));
+                .del((error, response) => error ? reject(error) : resolve(json(response)));
         });
     }
 
@@ -183,9 +191,9 @@ class resource_proxy {
             this.client
                 .api
                 .newRequest()
-                .follow(this.singular_name)
+                .follow(this.name)
                 .withTemplateParameters(params)
-                .put(data, (error, response) => error ? reject(error) : resolve(response));
+                .put(data, (error, response) => error ? reject(error) : resolve(json(response)));
         });
     }
 
