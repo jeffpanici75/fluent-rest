@@ -37,8 +37,7 @@ function middleware_chainer(mp, i, req, res) {
     mw(req, res, () => {
         middleware_chainer(mp, i + 1, req, res);
     });
-};
-
+}
 
 export function hal_formatter(req, res, next) {
     let status_code;
@@ -115,6 +114,23 @@ class endpoint {
         this._router = router;
         this._id_name = id_name;
         this._links = links || [];
+    }
+
+    parent_uri() {        
+        let endpoints = [];
+        let current = this;
+        while (current) {
+            endpoints.push(current);
+            current = current.parent ? 
+                (current.parent.fluent_rest ? current.parent.fluent_rest.endpoint : null) : 
+                null;
+        }
+        var uri = '';
+        endpoints.forEach(x => {
+            uri = uri_append(uri, x.uri);
+            uri = uri_append(uri, '{' + x.id_name + '}');
+        });
+        return uri;
     }
 
     get uri() {
@@ -261,33 +277,6 @@ class entity_builder {
         return this._entity;
     }
 
-    _get_uri(endpoint) {        
-        let endpoints = [];
-        let current = endpoint;
-        while (current) {
-            endpoints.push(current);
-            current = current.parent ? 
-                (current.parent.fluent_rest ? current.parent.fluent_rest.endpoint : null) : 
-                null;
-        }
-        var uri = '';
-        endpoints.forEach(x => {
-            uri = uri_append(uri, x.uri);
-            uri = uri_append(uri, '{' + x.id_name + '}');
-        });
-        return uri;
-    }
-
-    _get_mount_uri() {
-        let mp = this.resource.mount_point;
-        let ep = mp.endpoint;
-        let mount_uri = uri_append(mp.uri, mp.resource_name);
-        if (ep) {
-            return uri_append(`/:${ep.id_name}`, mount_uri);        
-        }
-        return mount_uri;
-    }
-
     endpoint(router) {
         let mp = this.resource.mount_point;
         router.fluent_rest = {
@@ -295,11 +284,9 @@ class entity_builder {
             parent: mp.router
         };
 
-        let mount_uri = this._get_mount_uri();
-        let path = uri_append(mp.uri, mp.resource_name);
-        let uri = uri_append(this._get_uri(mp.endpoint), path);
-        let singular = pluralize.singular(mp.resource_name);
-        let id_name = `${singular}_id`;
+        let mount_uri = mp.mount_uri();
+        let uri = uri_append(mp.endpoint ? mp.endpoint.parent_uri() : '', mp.path);
+        let id_name = `${mp.singular_resource_name}_id`;
 
         let fk = null;
         if (mp.endpoint) {
@@ -624,7 +611,7 @@ class entity_builder {
         });
 
         let links = [];
-        let ep = new endpoint(mp.resource_name, router, links, path, id_name);
+        let ep = new endpoint(mp.resource_name, router, links, mp.path, id_name);
 
         mp.router.use(mount_uri, router);
         router.fluent_rest.endpoint = ep;
@@ -683,18 +670,24 @@ class verbs_builder {
     }
 
     endpoint(router) {
+        let mp = this.resource.mount_point;
+        router.fluent_rest = {
+            endpoint: null,
+            parent: mp.router
+        };
+
         if (this._get) router.get(this._get);
         if (this._put) router.put(this._put);
         if (this._patch) router.patch(this._patch);
         if (this._post) router.post(this._post);
         if (this._del) router.del(this._del);
 
-        let mp = this.resource.mount_point;
-        let mount_uri = uri_append(mp.uri, mp.resource_name);
-        let singular = pluralize.singular(mp.resource_name);
-        let id_name = `${singular}_id`;
-        let ep = new endpoint(router, links, mount_uri, id_name);
-        mp.router.fluent_rest = { endpoint: ep };
+        let mount_uri = mp.mount_uri();
+        let uri = uri_append(mp.endpoint.parent_uri(), mp.path);
+        let id_name = `${mp.singular_resource_name}_id`;
+
+        let ep = new endpoint(router, [], mount_uri, id_name);
+        mp.router.fluent_rest.endpoint = ep;
 
         return ep;
     }
@@ -714,42 +707,14 @@ class endpoints_builder {
         return this._endpoints;
     }
 
-    _get_uri(endpoint) {        
-        let endpoints = [];
-        let current = endpoint;
-        while (current) {
-            endpoints.push(current);
-            current = current.parent ? 
-                (current.parent.fluent_rest ? current.parent.fluent_rest.endpoint : null) : 
-                null;
-        }
-        var uri = '';
-        endpoints.forEach(x => {
-            uri = uri_append(uri, x.uri);
-            uri = uri_append(uri, '{' + x.id_name + '}');
-        });
-        return uri;
-    }
-
-    _get_mount_uri() {
-        let mp = this.resource.mount_point;
-        let ep = mp.endpoint;
-        let mount_uri = uri_append(mp.uri, mp.resource_name);
-        if (ep) {
-            return uri_append(`/:${ep.id_name}`, mount_uri);        
-        }
-        return mount_uri;
-    }
-
     endpoint(router) {
         let mp = this.resource.mount_point;
         router.fluent_rest = {
             endpoint: null,
             parent: mp.router
         };
-        let mount_uri = this._get_mount_uri();
-        let path = uri_append(mp.uri, mp.resource_name);
-        let uri = uri_append(this._get_uri(mp.endpoint), path);
+        let mount_uri = mp.mount_uri();
+        let uri = uri_append(mp.endpoint ? mp.endpoint.parent_uri() : '', mp.path);
 
         router.get('/', (req, res) => {
             let links = [];
@@ -770,7 +735,7 @@ class endpoints_builder {
             middleware_chainer(mp, 0, req, res);
         });
 
-        let ep = new endpoint(mp.resource_name, router, [], path, null);
+        let ep = new endpoint(mp.resource_name, router, [], mp.path, null);
 
         mp.router.use(mount_uri, router);
         router.fluent_rest.endpoint = ep;
@@ -854,6 +819,19 @@ class mount_point_builder {
         this._rest_service = rest_service;
     }
 
+    mount_uri() {
+        let ep = this.endpoint;
+        let mount_uri = this.path;
+        if (ep) {
+            return uri_append(`/:${ep.id_name}`, mount_uri);        
+        }
+        return mount_uri;
+    }
+
+    get path() {
+        return uri_append(this.uri, this.resource_name);
+    }
+
     get uri() {
         return this._uri;
     }
@@ -868,6 +846,10 @@ class mount_point_builder {
 
     get resource_name() {
         return this._resource_name;
+    }
+
+    get singular_resource_name() {
+        return pluralize.singular(this.resource_name);
     }
 
     get endpoint() {
