@@ -351,8 +351,6 @@ class entity_builder {
                 }
             }
 
-            // XXX: SQL injection?  Is there an existing node library for that?
-            //
             let fields = select_fields(req.query.fields);
             let count_query, query = null;
 
@@ -452,7 +450,18 @@ class entity_builder {
             if (!is_allowed(req, res)) return;
 
             let id = req.params[id_name];
-            // XXX: throw if no id
+            if (!id) {
+                res.fluent_rest = {
+                    rows: [],
+                    links: [],
+                    status_code: 400,
+                    name: mp.resource_name,
+                    uri: `${expand_tokens(uri, req.params)}/`,
+                    error: new Error(`The URI parameter '${id_name}' is required.`)
+                };
+                middleware_chainer(mp, 0, req, res);
+                return;
+            }
 
             // XXX: Do we really need the query here or should we just map
             //      the sql error/update count.
@@ -495,6 +504,18 @@ class entity_builder {
             if (!is_allowed(req, res)) return;
 
             let id = req.params[id_name];
+            if (!id) {
+                res.fluent_rest = {
+                    rows: [],
+                    links: [],
+                    status_code: 400,
+                    name: mp.resource_name,
+                    uri: `${expand_tokens(uri, req.params)}/`,
+                    error: new Error(`The URI parameter '${id_name}' is required.`)
+                };
+                middleware_chainer(mp, 0, req, res);
+                return;
+            }
 
             // XXX: Restruct this so that the JSONPatch path is seperate from the more simplistic update
             this._db.select()
@@ -593,6 +614,18 @@ class entity_builder {
             if (!is_allowed(req, res)) return;
 
             let id = req.params[id_name];
+            if (!id) {
+                res.fluent_rest = {
+                    rows: [],
+                    links: [],
+                    status_code: 400,
+                    name: mp.resource_name,
+                    uri: `${expand_tokens(uri, req.params)}/`,
+                    error: new Error(`The URI parameter '${id_name}' is required.`)
+                };
+                middleware_chainer(mp, 0, req, res);
+                return;
+            }
 
             this._db.delete(this.entity('del', req))
                 .where(this._primary_key, id)
