@@ -48,7 +48,7 @@ class hal_client {
         return new Promise((resolve, reject) => {
             this.api
                 .newRequest()
-                .getResource((error, resource) => error ? reject(error) : resolve(resource)); 
+                .get((error, response) => error ? reject(error) : resolve({ response, resource: json(response) })); 
         });
     }
 
@@ -58,7 +58,7 @@ class hal_client {
                 .newRequest()
                 .from(url.resolve(this.api.getFrom(), href))
                 .withTemplateParameters(params)
-                .getResource((error, resource) => error ? reject(error) : resolve(resource)); 
+                .get((error, response) => error ? reject(error) : resolve({ response, resource: json(response) })); 
         });
     }
 }
@@ -117,7 +117,7 @@ class resource_proxy {
                 .newRequest()
                 .withRequestOptions(opts)
                 .follow(this.name)
-                .getResource((error, resource) => error ? reject(error) : resolve(resource)); 
+                .get((error, response) => error ? reject(error) : resolve({ response, resource: json(response) })); 
         });
     }
 
@@ -131,7 +131,7 @@ class resource_proxy {
                 request = request.withRequestOptions(options);
             request
                 .follow(this.name)
-                .post(data, (error, response) => error ? reject(error) : resolve(json(response)));
+                .post(data, (error, response) => error ? reject(error) : resolve({ response, resource: json(response) }));
         });
     }
 
@@ -148,7 +148,7 @@ class resource_proxy {
             request
                 .follow(this.name)
                 .withTemplateParameters(params)
-                .getResource((error, resource) => error ? reject(error) : resolve(resource));
+                .get((error, response) => error ? reject(error) : resolve({ response, resource: json(response) }));
         });
     }
 
@@ -167,7 +167,7 @@ class resource_proxy {
             request
                 .follow(this.name)
                 .withTemplateParameters(params)
-                .patch(data, (error, response) => error ? reject(error) : resolve(json(response)));
+                .patch(data, (error, response) => error ? reject(error) : resolve({ response, resource: json(response) }));
         });
     }
 
@@ -182,7 +182,7 @@ class resource_proxy {
                 .withRequestOptions(opts)
                 .follow(this.name)
                 .withTemplateParameters(params)
-                .del((error, response) => error ? reject(error) : resolve(json(response)));
+                .del((error, response) => error ? reject(error) : resolve({ response, resource: json(response) }));
         });
     }
 
@@ -199,7 +199,7 @@ class resource_proxy {
             request
                 .follow(this.name)
                 .withTemplateParameters(params)
-                .del((error, response) => error ? reject(error) : resolve(json(response)));
+                .del((error, response) => error ? reject(error) : resolve({ response, resource: json(response) }));
         });
     }
 
@@ -218,7 +218,7 @@ class resource_proxy {
             request
                 .follow(this.name)
                 .withTemplateParameters(params)
-                .put(data, (error, response) => error ? reject(error) : resolve(json(response)));
+                .put(data, (error, response) => error ? reject(error) : resolve({ response, resource: json(response) }));
         });
     }
 
@@ -235,7 +235,7 @@ class resource_proxy {
             request
                 .follow(this.name)
                 .withTemplateParameters(params)
-                .getResource((error, resource) => error ? reject(error) : resolve(resource));
+                .get((error, response) => error ? reject(error) : resolve({ response, resource: json(response) }));
         });
     }
 }
