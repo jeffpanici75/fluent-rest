@@ -1,5 +1,6 @@
 let url = require('url');
 let hal = require('hal');
+let util = require('util');
 let pluralize = require('pluralize');
 let debug = require('debug')('rest-service-builder');
 
@@ -169,6 +170,10 @@ class constraint_builder {
         return this._name;
     }
 
+    get error() {
+        return this._error;
+    }
+
     get entity() {
         return this._entity;
     }
@@ -277,6 +282,27 @@ class entity_builder {
         return this._entity;
     }
 
+    _map_error(err) {
+        if (!err)
+            return null;
+        if (err.code && err.file && err.line && err.routine) {
+            let matches = err.message.match(/"(\w+)"/g);
+            if (matches) {
+                matches.forEach(x => {
+                    let name = x.replace(/"/g, (m, v) => '');
+                    let constraint = this._constraints[name];
+                    if (constraint) {
+                        let old_err = err;
+                        err = new Error(constraint.error);
+                        err.nested_error = old_err;
+                    }
+                });
+            }
+        }
+        err.status_code = 500;
+        return err;
+    }
+
     endpoint(router) {
         let mp = this.resource.mount_point;
         router.fluent_rest = {
@@ -330,7 +356,8 @@ class entity_builder {
                         req.query[x] = named_query[x];
                 } else {
                     let fields = select_fields(req.query.fields);
-                    this._db.select(fields)
+                    this._db
+                        .select(fields)
                         .from(this.entity('get-id', req))
                         .where(this._primary_key, id)
                         .rows((err, rows) => {
@@ -355,11 +382,13 @@ class entity_builder {
             let count_query, query = null;
 
             if (this._full_text_entity && req.query.q) {
-                count_query = this._db.select('count(*) as c')
+                count_query = this._db
+                    .select('count(*) as c')
                     .from(this._full_text_entity.name)
                     .where(this._full_text_entity.field, req.query.q);
 
-                query = this._db.select(fields)
+                query = this._db
+                    .select(fields)
                     .from(this._full_text_entity.name)
                     .where(this._full_text_entity.field, req.query.q);
             } else {
@@ -465,7 +494,8 @@ class entity_builder {
 
             // XXX: Do we really need the query here or should we just map
             //      the sql error/update count.
-            this._db.select()
+            this._db
+                .select()
                 .from(this.entity('get-id', req))
                 .where(this._primary_key, id)
                 .rows((err, rows) => {
@@ -486,12 +516,11 @@ class entity_builder {
                             .where(this._primary_key, id)
                             .returning(select_fields(req.query.fields))
                             .row((err, row) => {
-                                if (err) err.status_code = 500;
                                 res.fluent_rest = {
                                     rows: [row],
-                                    error: err,
                                     links: [],
                                     name: mp.resource_name,
+                                    error: this._map_error(err),
                                     uri: `${expand_tokens(uri, req.params)}/${id}/`
                                 };
                                 middleware_chainer(mp, 0, req, res);
@@ -518,11 +547,13 @@ class entity_builder {
             }
 
             // XXX: Restruct this so that the JSONPatch path is seperate from the more simplistic update
-            this._db.select()
+            this._db
+                .select()
                 .from(this.entity('get-id', req))
                 .where(this._primary_key, id)
                 .rows((err, rows) => {
                     if (err) {
+                        err = this._map_error(err);
                         res.fluent_rest = { error: err };
                         middleware_chainer(mp, 0, req, res);
                         return;
@@ -535,21 +566,21 @@ class entity_builder {
                         middleware_chainer(mp, 0, req, res);
                     } else {
                         let patches = req.body;
-                        if (typeof patches === 'Array') {
+                        if (Array.isArray(patches)) {
                             jsonpatch.apply(obj, patches);
                         } else {
                             obj = patches;
                         }
-                        this._db.update(this.entity('patch', req), obj)
+                        this._db
+                            .update(this.entity('patch', req), obj)
                             .where(this._primary_key, id)
                             .returning(select_fields(req.query.fields))
                             .row((err, row) => {
-                                if (err) err.status_code = 500;
                                 res.fluent_rest = {
                                     rows: [row],
-                                    error: err,
                                     links: [],
                                     name: mp.resource_name,
+                                    error: this._map_error(err),
                                     uri: `${expand_tokens(uri, req.params)}/${id}/`
                                 };
                                 middleware_chainer(mp, 0, req, res);
@@ -565,18 +596,18 @@ class entity_builder {
                 req.body[fk] = req.params[mp.endpoint.id_name];
             }
 
-            this._db.insert(this.entity('post', req), req.body)
+            this._db
+                .insert(this.entity('post', req), req.body)
                 .returning(select_fields(req.query.fields))
                 .row((err, row) => {
-                    if (err) err.status_code = 500;
                     let id = row ? row[this._primary_key] : null;
                     res.fluent_rest = {
                         rows: [row],
-                        error: err,
                         links: [],
                         status_code: 201,
                         name: mp.resource_name,
-                        uri: `${expand_tokens(uri, req.params)}/${id}/`
+                        error: this._map_error(err),
+                        uri: id ? `${expand_tokens(uri, req.params)}/${id}/` : `${expand_tokens(uri, req.params)}/`
                     };
                     middleware_chainer(mp, 0, req, res);
                 });
@@ -597,13 +628,12 @@ class entity_builder {
             }
 
             query.run((err) => {
-                if (err) err.status_code = 500;
                 res.fluent_rest = {
                     rows: [],
-                    error: err,
                     links: [],
                     status_code: 204,
                     name: mp.resource_name,
+                    error: this._map_error(err),
                     uri: `${expand_tokens(uri, req.params)}/`
                 };
                 middleware_chainer(mp, 0, req, res);
@@ -627,16 +657,16 @@ class entity_builder {
                 return;
             }
 
-            this._db.delete(this.entity('del', req))
+            this._db
+                .delete(this.entity('del', req))
                 .where(this._primary_key, id)
                 .run((err) => {
-                    if (err) err.status_code = 500;
                     res.fluent_rest = {
                         rows: [],
-                        error: err,
                         links: [],
                         status_code: 204,
                         name: mp.resource_name,
+                        error: this._map_error(err),
                         uri: `${expand_tokens(uri, req.params)}/${id}/` 
                     };
                     middleware_chainer(mp, 0, req, res);
