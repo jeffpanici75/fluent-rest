@@ -1,5 +1,4 @@
 let url = require('url');
-let promise = require('bluebird');
 let traverson = require('traverson'); 
 let pluralize = require('pluralize');
 let hal_adapter = require('traverson-hal');
