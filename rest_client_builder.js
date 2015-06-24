@@ -1,8 +1,10 @@
-let url = require('url');
-let traverson = require('traverson'); 
-let pluralize = require('pluralize');
-let hal_adapter = require('traverson-hal');
-let debug = require('debug')('rest-client-builder');
+import url from 'url';
+import traverson from 'traverson';
+import pluralize from 'pluralize';
+import hal_adapter from 'traverson-hal';
+import debug_logger from 'debug';
+
+let debug = debug_logger('rest-client-builder');
 
 traverson.registerMediaType(hal_adapter.mediaType, hal_adapter);
 

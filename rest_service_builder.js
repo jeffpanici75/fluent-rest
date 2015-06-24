@@ -1,8 +1,10 @@
-let url = require('url');
-let hal = require('hal');
-let util = require('util');
-let pluralize = require('pluralize');
-let debug = require('debug')('rest-service-builder');
+import url from 'url';
+import hal from 'hal';
+import util from 'util';
+import pluralize from 'pluralize';
+import debug_logger from 'debug';
+
+let debug = debug_logger('rest-service-builder');
 
 // XXX: Allow specifying "optimistic locking column", default to "hash" or something
 //      Change put/patch/delete to verify optimistic locking is equal coming in on etag header.
