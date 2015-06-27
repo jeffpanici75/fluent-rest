@@ -98,10 +98,22 @@ class resource_proxy {
             find_by_named_query: true
         };
         this._client = client;
+        this._follow_names = [];
+        this._template_params = {};
         this._parent = parent || null;
         this._parent_id = parent_id || null;
         this._singular_name = pluralize.singular(name);
         this._id_name = `${this._singular_name}_id`;
+
+        let current = this;
+        while (true) {
+            this._follow_names.unshift(current.name);
+            if (current.parent_id)
+                this._template_params[current.id_name] = current.parent_id;
+            current = current._parent;
+            if (!current || !current.name)
+                break;
+        }
     }
 
     get name() {
@@ -116,12 +128,24 @@ class resource_proxy {
         return this._parent;
     }
 
+    get id_name() {
+        return this._id_name;
+    }
+
     get parent_id() {
         return this._parent_id;
     }
 
+    get follow_names() {
+        return this._follow_names;
+    }
+
     get singular_name() {
         return this._singular_name;
+    }
+
+    get template_params() {
+        return this._template_params;
     }
 
     _throw_if_disabled(action) {
@@ -141,7 +165,8 @@ class resource_proxy {
                 .api
                 .newRequest()
                 .withRequestOptions(opts)
-                .follow(this.name)
+                .follow(this.follow_names)
+                .withTemplateParameters(this.template_params)
                 .get((error, response) => error ? reject(error) : resolve({ response, resource: json(response) })); 
         });
     }
@@ -155,7 +180,8 @@ class resource_proxy {
             if (options)
                 request = request.withRequestOptions(options);
             request
-                .follow(this.name)
+                .follow(this.follow_names)
+                .withTemplateParameters(this.template_params)
                 .post(data, (error, response) => error ? reject(error) : resolve({ response, resource: json(response) }));
         });
     }
@@ -164,14 +190,14 @@ class resource_proxy {
         this._throw_if_disabled('find_by_id');
         if (!id)
             throw new Error("The 'id' parameter is required.");
-        let params = {};
-        params[this._id_name] = id;
+        let params = this.template_params;
+        params[this.id_name] = id;
         return new Promise((resolve, reject) => {
             let request = this.client.api.newRequest();
             if (options)
                 request = request.withRequestOptions(options);
             request
-                .follow(this.name)
+                .follow(this.follow_names)
                 .withTemplateParameters(params)
                 .get((error, response) => error ? reject(error) : resolve({ response, resource: json(response) }));
         });
@@ -183,14 +209,14 @@ class resource_proxy {
             throw new Error("The 'id' parameter is required.");
         if (!data)
             throw new Error("The 'data' parameter is required.");
-        let params = {};
-        params[this._id_name] = id;
+        let params = this.template_params;
+        params[this.id_name] = id;
         return new Promise((resolve, reject) => {
             let request = this.client.api.newRequest();
             if (options)
                 request = request.withRequestOptions(options);
             request
-                .follow(this.name)
+                .follow(this.follow_names)
                 .withTemplateParameters(params)
                 .patch(data, (error, response) => error ? reject(error) : resolve({ response, resource: json(response) }));
         });
@@ -198,14 +224,14 @@ class resource_proxy {
 
     delete(filters, options) {
         this._throw_if_disabled('delete');
-        let params = {};
+        let params = this.template_params;
         let opts = Object.assign({}, { qs: filters || {} }, options);
         return new Promise((resolve, reject) => {
             this.client
                 .api
                 .newRequest()
                 .withRequestOptions(opts)
-                .follow(this.name)
+                .follow(this.follow_names)
                 .withTemplateParameters(params)
                 .del((error, response) => error ? reject(error) : resolve({ response, resource: json(response) }));
         });
@@ -215,14 +241,14 @@ class resource_proxy {
         this._throw_if_disabled('delete_by_id');
         if (!id)
             throw new Error("The 'id' parameter is required.");
-        let params = {};
-        params[this._id_name] = id;
+        let params = this.template_params;
+        params[this.id_name] = id;
         return new Promise((resolve, reject) => {
             let request = this.client.api.newRequest();
             if (options)
                 request = request.withRequestOptions(options);
             request
-                .follow(this.name)
+                .follow(this.follow_names)
                 .withTemplateParameters(params)
                 .del((error, response) => error ? reject(error) : resolve({ response, resource: json(response) }));
         });
@@ -234,14 +260,14 @@ class resource_proxy {
             throw new Error("The 'id' parameter is required.");
         if (!data)
             throw new Error("The 'data' parameter is required.");
-        let params = {};
-        params[this._id_name] = id;
+        let params = this.template_params;
+        params[this.id_name] = id;
         return new Promise((resolve, reject) => {
             let request = this.client.api.newRequest();
             if (options)
                 request = request.withRequestOptions(options);
             request
-                .follow(this.name)
+                .follow(this.follow_names)
                 .withTemplateParameters(params)
                 .put(data, (error, response) => error ? reject(error) : resolve({ response, resource: json(response) }));
         });
@@ -251,14 +277,14 @@ class resource_proxy {
         this._throw_if_disabled('find_by_named_query');
         if (!name)
             throw new Error("The 'name' parameter is required.");
-        let params = {};
-        params[this._id_name] = name;
+        let params = this.template_params;
+        params[this.id_name] = name;
         return new Promise((resolve, reject) => {
             let request = this.client.api.newRequest();
             if (options)
                 request = request.withRequestOptions(options);
             request
-                .follow(this.name)
+                .follow(this.follow_names)
                 .withTemplateParameters(params)
                 .get((error, response) => error ? reject(error) : resolve({ response, resource: json(response) }));
         });

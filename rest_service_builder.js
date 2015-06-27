@@ -313,7 +313,7 @@ class entity_builder {
         return err;
     }
 
-    _find_by_id(req, res, id) {
+    _find_by_id(uri, req, res, id) {
         return new Promise((resolve, reject) => {
             let mp = this.resource.mount_point;
             this._db
@@ -337,7 +337,7 @@ class entity_builder {
         });
     }
 
-    _update(router, req, res, id, obj) {
+    _update(uri, req, res, id, obj) {
         return new Promise((resolve, reject) => {
             let mp = this.resource.mount_point;
             this._db
@@ -404,7 +404,7 @@ class entity_builder {
                     for (let x in named_query)
                         req.query[x] = named_query[x];
                 } else {
-                    this._find_by_id(req, res, id)
+                    this._find_by_id(uri, req, res, id)
                         .then(row => {
                             res.fluent_rest = {
                                 rows: [row],
@@ -607,16 +607,16 @@ class entity_builder {
             let obj;
             let patches = req.body;
             if (Array.isArray(patches)) {
-                this._find_by_id(req, res, id)
+                this._find_by_id(uri, req, res, id)
                     .then(row => {
                         jsonpatch.apply(row, patches);
-                        this._update(router, req, res, id, row)
+                        this._update(uri, req, res, id, row)
                             .then(patch_handler)
                             .catch(error_handler);
                     })
                     .catch(error_handler);
             } else {
-                this._update(router, req, res, id, req.body)
+                this._update(uri, req, res, id, req.body)
                     .then(row => patch_handler)
                     .catch(err => error_handler);
             }
@@ -713,7 +713,7 @@ class entity_builder {
         router.fluent_rest.endpoint = ep;
         
         if (mp.endpoint) {
-            mp.endpoint.links.push({ name: mp.resource_name, url: { href: `${uri}/`, templated: true }});
+            mp.endpoint.links.push({ name: mp.resource_name, url: { href: `${uri}{/${id_name}}`, templated: true }});
         }
 
         return ep;
