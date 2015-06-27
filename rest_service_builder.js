@@ -301,8 +301,72 @@ class entity_builder {
                 });
             }
         }
-        err.status_code = 500;
+        if (!err.status_code)
+            err.status_code = 500;
         return err;
+    }
+
+    _find_by_id(router, req, res, id) {
+        return new Promise((resolve, reject) => {
+            let mp = this.resource.mount_point;
+            this._db
+                .select(select_fields(req.query.fields))
+                .from(this.entity('get-id', req))
+                .where(this._primary_key, id)
+                .rows((err, rows) => {
+                    if (!err) {
+                        if (!rows || rows.length === 0) {
+                            err = new Error(`No resource exists at ${expand_tokens(uri, req.params)}/${id}/.`);
+                            err.status_code = 404;
+                        } else if (rows.length > 1) {
+                            err = new Error(
+                                `More than one resource exists at ${expand_tokens(uri, req.params)}/${id}/ ` + 
+                                `where only one should exist.`);
+                            err.status_code = 400;
+                        }
+                    }
+                    res.fluent_rest = {
+                        rows: rows ? rows : [],
+                        name: mp.resource_name,
+                        error: this._map_error(err),
+                        links: router.fluent_rest.endpoint.links,
+                        uri: `${expand_tokens(uri, req.params)}/${id}/`
+                    };
+                    middleware_chainer(mp, 0, req, res);
+                    err ? reject(err) : resolve(rows[0]);
+                });
+        });
+    }
+
+    _patch(router, req, res, id, obj) {
+        return new Promise((resolve, reject) => {
+            let mp = this.resource.mount_point;
+            this._db
+                .update(this.entity('patch', req), obj)
+                .where(this._primary_key, id)
+                .returning(select_fields(req.query.fields))
+                .row((err, row) => {
+                    if (!row) {
+                        let error = new Error(
+                            `No resource exists at ${expand_tokens(uri, req.params)}/${id}/ ` + 
+                            `or the optimisic lock value did not match.`);
+                        error.status_code = 404;
+                        res.fluent_rest = { error };
+                        middleware_chainer(mp, 0, req, res);
+                        reject(error);
+                    } else {
+                        res.fluent_rest = {
+                            rows: [row],
+                            links: [],
+                            name: mp.resource_name,
+                            error: this._map_error(err),
+                            uri: `${expand_tokens(uri, req.params)}/${id}/`
+                        };
+                        middleware_chainer(mp, 0, req, res);
+                        resolve(row);
+                    }
+                });
+        });
     }
 
     endpoint(router) {
@@ -357,25 +421,7 @@ class entity_builder {
                     for (let x in named_query)
                         req.query[x] = named_query[x];
                 } else {
-                    let fields = select_fields(req.query.fields);
-                    this._db
-                        .select(fields)
-                        .from(this.entity('get-id', req))
-                        .where(this._primary_key, id)
-                        .rows((err, rows) => {
-                            if (!err && (!rows || rows.length === 0)) {
-                                err = new Error(`No resource exists at ${expand_tokens(uri, req.params)}/${id}/.`);
-                                err.status_code = 404;
-                            }
-                            res.fluent_rest = {
-                                rows: rows ? rows : [],
-                                error: err,
-                                name: mp.resource_name,
-                                links: router.fluent_rest.endpoint.links,
-                                uri: `${expand_tokens(uri, req.params)}/${id}/`
-                            };
-                            middleware_chainer(mp, 0, req, res);
-                        });
+                    this._find_by_id(router, req, res, id);
                     return;
                 }
             }
@@ -494,39 +540,27 @@ class entity_builder {
                 return;
             }
 
-            // XXX: Do we really need the query here or should we just map
-            //      the sql error/update count.
             this._db
-                .select()
-                .from(this.entity('get-id', req))
+                .update(this.entity('put', req), req.body)
                 .where(this._primary_key, id)
-                .rows((err, rows) => {
-                    if (err) {
-                        res.fluent_rest = { error: err };
-                        middleware_chainer(mp, 0, req, res);
-                        return;
-                    }
-                    let obj = first(rows);
-                    if (!obj) {
-                        let error = new Error(`No resource exists at ${expand_tokens(uri, req.params)}/${id}/.`);
+                .returning(select_fields(req.query.fields))
+                .row((err, row) => {
+                    if (!row) {
+                        let error = new Error(
+                            `No resource exists at ${expand_tokens(uri, req.params)}/${id}/ ` + 
+                            `or the optimisic lock value did not match.`);
                         error.status_code = 404;
                         res.fluent_rest = { error };
                         middleware_chainer(mp, 0, req, res);
                     } else {
-                        this._db
-                            .update(this.entity('put', req), req.body)
-                            .where(this._primary_key, id)
-                            .returning(select_fields(req.query.fields))
-                            .row((err, row) => {
-                                res.fluent_rest = {
-                                    rows: [row],
-                                    links: [],
-                                    name: mp.resource_name,
-                                    error: this._map_error(err),
-                                    uri: `${expand_tokens(uri, req.params)}/${id}/`
-                                };
-                                middleware_chainer(mp, 0, req, res);
-                            });
+                        res.fluent_rest = {
+                            rows: [row],
+                            links: [],
+                            name: mp.resource_name,
+                            error: this._map_error(err),
+                            uri: `${expand_tokens(uri, req.params)}/${id}/`
+                        };
+                        middleware_chainer(mp, 0, req, res);
                     }
                 });
         });
@@ -548,47 +582,18 @@ class entity_builder {
                 return;
             }
 
-            // XXX: Restruct this so that the JSONPatch path is seperate from the more simplistic update
-            this._db
-                .select()
-                .from(this.entity('get-id', req))
-                .where(this._primary_key, id)
-                .rows((err, rows) => {
-                    if (err) {
-                        err = this._map_error(err);
-                        res.fluent_rest = { error: err };
-                        middleware_chainer(mp, 0, req, res);
-                        return;
-                    }
-                    let obj = first(rows);
-                    if (!obj) {
-                        let error = new Error(`No resource exists at ${expand_tokens(uri, req.params)}/${id}/.`);
-                        error.status_code = 404;
-                        res.fluent_rest = { error };
-                        middleware_chainer(mp, 0, req, res);
-                    } else {
-                        let patches = req.body;
-                        if (Array.isArray(patches)) {
-                            jsonpatch.apply(obj, patches);
-                        } else {
-                            obj = patches;
-                        }
-                        this._db
-                            .update(this.entity('patch', req), obj)
-                            .where(this._primary_key, id)
-                            .returning(select_fields(req.query.fields))
-                            .row((err, row) => {
-                                res.fluent_rest = {
-                                    rows: [row],
-                                    links: [],
-                                    name: mp.resource_name,
-                                    error: this._map_error(err),
-                                    uri: `${expand_tokens(uri, req.params)}/${id}/`
-                                };
-                                middleware_chainer(mp, 0, req, res);
-                            });
-                    }
-                });
+            let obj;
+            let patches = req.body;
+            if (Array.isArray(patches)) {
+                this._find_by_id(router, req, res, id)
+                    .then(row => {
+                        jsonpatch.apply(row, patches);
+                        this._patch(router, req, res, id, row);
+                    })
+                    .catch();
+            } else {
+                this._patch(router, req, res, id, req.body);
+            }
         });
     
         router.post('/', (req, res) => {
