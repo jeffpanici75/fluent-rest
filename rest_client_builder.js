@@ -17,6 +17,25 @@ function json(res) {
     }
 }
 
+function add_child_accessors(client, parent, children) {
+    if (!children) 
+        return;
+    children.forEach(x => {
+        parent[x.name] = () => {
+            let proxy = new resource_proxy(client, x.name, parent, x._actions);
+            add_child_accessors(client, proxy, x._children);
+            return proxy;
+        };
+        parent[pluralize.singular(x.name)] = id => {
+            if (!id)
+                throw new Error("The 'id' parameter is required.");
+            let proxy = new resource_proxy(client, x.name, parent, x._actions, id);
+            add_child_accessors(client, proxy, x._children);
+            return proxy;
+        };
+    });
+}
+
 class hal_client {
     constructor() {
         this._uri = null;
@@ -65,7 +84,7 @@ class hal_client {
 }
 
 class resource_proxy {
-    constructor(client, name, parent, actions) {
+    constructor(client, name, parent, actions, parent_id) {
         this._name = name;
         this._children = [];
         this._actions = actions || {
@@ -80,6 +99,7 @@ class resource_proxy {
         };
         this._client = client;
         this._parent = parent || null;
+        this._parent_id = parent_id || null;
         this._singular_name = pluralize.singular(name);
         this._id_name = `${this._singular_name}_id`;
     }
@@ -94,6 +114,10 @@ class resource_proxy {
 
     get parent() {
         return this._parent;
+    }
+
+    get parent_id() {
+        return this._parent_id;
     }
 
     get singular_name() {
@@ -325,20 +349,9 @@ class root_resource_builder {
     }
 
     hal() {
-        let h = new hal_client();
-
-        function make_client(parent, resources) {
-            if (!parent || !resources || resources.length === 0) return;
-            resources.forEach(x => {
-                let proxy = new resource_proxy(h, x.name, parent, x._actions);
-                make_client(proxy, x._children);
-                parent[x.name] = proxy;
-            });
-        }
-
-        make_client(h, this._children);
-
-        return h;
+        let client = new hal_client();
+        add_child_accessors(client, client, this._children);
+        return client;
     }
 
     resource(name) {
