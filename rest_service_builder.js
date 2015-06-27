@@ -6,9 +6,6 @@ import debug_logger from 'debug';
 
 let debug = debug_logger('rest-service-builder');
 
-// XXX: Allow specifying "optimistic locking column", default to "hash" or something
-//      Change put/patch/delete to verify optimistic locking is equal coming in on etag header.
-
 function first(x) {
     return x && x.length > 0 ? x[0] : null;
 }
@@ -25,6 +22,16 @@ function uri_append(l, r) {
     if (r !== '/')
         uri += r;
     return uri;
+}
+
+function select_fields(fields) {
+    return fields ? fields.split(',').map((x) => x.trim()) : '*';
+}
+
+function get_sorts(req) {
+    return req.query.sort
+        .split(',')
+        .map((x) => x.charAt(0) === '-' ? x.substring(1) + ' desc' : x);
 }
 
 function expand_tokens(s, values) {
@@ -306,7 +313,7 @@ class entity_builder {
         return err;
     }
 
-    _find_by_id(router, req, res, id) {
+    _find_by_id(req, res, id) {
         return new Promise((resolve, reject) => {
             let mp = this.resource.mount_point;
             this._db
@@ -325,20 +332,12 @@ class entity_builder {
                             err.status_code = 400;
                         }
                     }
-                    res.fluent_rest = {
-                        rows: rows ? rows : [],
-                        name: mp.resource_name,
-                        error: this._map_error(err),
-                        links: router.fluent_rest.endpoint.links,
-                        uri: `${expand_tokens(uri, req.params)}/${id}/`
-                    };
-                    middleware_chainer(mp, 0, req, res);
-                    err ? reject(err) : resolve(rows[0]);
+                    err ? reject(err) : resolve(first(rows));
                 });
         });
     }
 
-    _patch(router, req, res, id, obj) {
+    _update(router, req, res, id, obj) {
         return new Promise((resolve, reject) => {
             let mp = this.resource.mount_point;
             this._db
@@ -351,18 +350,8 @@ class entity_builder {
                             `No resource exists at ${expand_tokens(uri, req.params)}/${id}/ ` + 
                             `or the optimisic lock value did not match.`);
                         error.status_code = 404;
-                        res.fluent_rest = { error };
-                        middleware_chainer(mp, 0, req, res);
                         reject(error);
                     } else {
-                        res.fluent_rest = {
-                            rows: [row],
-                            links: [],
-                            name: mp.resource_name,
-                            error: this._map_error(err),
-                            uri: `${expand_tokens(uri, req.params)}/${id}/`
-                        };
-                        middleware_chainer(mp, 0, req, res);
                         resolve(row);
                     }
                 });
@@ -395,8 +384,6 @@ class entity_builder {
             return false;
         };
 
-        let select_fields = (fields) => fields ? fields.split(',').map((x) => x.trim()) : '*'; 
-    
         let get_filters = (req) => {
             let list = {};
             for (let x in req.query) {
@@ -405,10 +392,6 @@ class entity_builder {
             }
             return list;
         };
-
-        let get_sorts = (req) => req.query.sort
-            .split(',')
-            .map((x) => x.charAt(0) === '-' ? x.substring(1) + ' desc' : x);
 
         let handler = (req, res) => {
             if (!is_allowed(req, res)) return;
@@ -421,7 +404,26 @@ class entity_builder {
                     for (let x in named_query)
                         req.query[x] = named_query[x];
                 } else {
-                    this._find_by_id(router, req, res, id);
+                    this._find_by_id(req, res, id)
+                        .then(row => {
+                            res.fluent_rest = {
+                                rows: [row],
+                                name: mp.resource_name,
+                                links: router.fluent_rest.endpoint.links,
+                                uri: `${expand_tokens(uri, req.params)}/${id}/`
+                            };
+                            middleware_chainer(mp, 0, req, res);
+                        })
+                        .catch(err => {
+                            res.fluent_rest = {
+                                rows: [],
+                                name: mp.resource_name,
+                                error: this._map_error(err),
+                                links: router.fluent_rest.endpoint.links,
+                                uri: `${expand_tokens(uri, req.params)}/${id}/`
+                            };
+                            middleware_chainer(mp, 0, req, res);
+                        });
                     return;
                 }
             }
@@ -582,17 +584,41 @@ class entity_builder {
                 return;
             }
 
+            let error_handler = (err) => {
+                res.fluent_rest = {
+                    rows: [],
+                    links: [],
+                    name: mp.resource_name,
+                    error: this._map_error(err),
+                    uri: `${expand_tokens(uri, req.params)}/${id}/`
+                };
+                middleware_chainer(mp, 0, req, res);
+            };
+            let patch_handler = (row) => {
+                res.fluent_rest = {
+                    rows: [row],
+                    links: [],
+                    name: mp.resource_name,
+                    uri: `${expand_tokens(uri, req.params)}/${id}/`
+                };
+                middleware_chainer(mp, 0, req, res);
+            };
+
             let obj;
             let patches = req.body;
             if (Array.isArray(patches)) {
-                this._find_by_id(router, req, res, id)
+                this._find_by_id(req, res, id)
                     .then(row => {
                         jsonpatch.apply(row, patches);
-                        this._patch(router, req, res, id, row);
+                        this._update(router, req, res, id, row)
+                            .then(patch_handler)
+                            .catch(error_handler);
                     })
-                    .catch();
+                    .catch(error_handler);
             } else {
-                this._patch(router, req, res, id, req.body);
+                this._update(router, req, res, id, req.body)
+                    .then(row => patch_handler)
+                    .catch(err => error_handler);
             }
         });
     
