@@ -501,8 +501,9 @@ class entity_builder {
                     for (let i = 0; i < number_of_pages; i++) {
                         page_links.push({ name: `pages`, url: { href: `${_uri}?page=${i}&page_count=${page_count}` }});
                     }
-                    
+                                    
                     query.rows((err, rows) => {
+                        res.set('X-Total-Count', total_count);
                         res.fluent_rest = {
                             uri: _uri,
                             error: err,
@@ -974,6 +975,22 @@ export class rest_service_builder {
     use(mw) {
         this._middlewares.push(mw);
         return this;
+    }
+
+    add_plural_rule(rule, result) {
+        pluralize.addPluralRule(rule, result);
+    }
+
+    add_singular_rule(rule, result) {
+        pluralize.addSingularRule(rule, result);
+    }
+
+    add_irregular_rule(rule, result) {
+        pluralize.addIrregularRule(rule, result);
+    }
+
+    add_uncountable_rule(rule) {
+        pluralize.addUncountableRule(rule);
     }
 
     mount_at(router, uri) {
