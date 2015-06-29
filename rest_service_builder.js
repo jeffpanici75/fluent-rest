@@ -376,10 +376,12 @@ class entity_builder {
 
         let is_allowed = (req, res) => {            
             if (this._verbs[req.method.toLowerCase()]) return true;
-
             let error = new Error(`This resource does not support the HTTP verb ${req.method.toUpperCase()}.`);
             error.status_code = 405;
-            res.fluent_rest = { error }; 
+            res.fluent_rest = { 
+                error,
+                links: []
+            }; 
             middleware_chainer(mp, 0, req, res);
             return false;
         };
@@ -552,8 +554,11 @@ class entity_builder {
                         let error = new Error(
                             `No resource exists at ${expand_tokens(uri, req.params)}/${id}/ ` + 
                             `or the optimisic lock value did not match.`);
-                        error.status_code = 404;
-                        res.fluent_rest = { error };
+                        error.status_code = 404;                    
+                        res.fluent_rest = {
+                            error,
+                            links: []
+                        };
                         middleware_chainer(mp, 0, req, res);
                     } else {
                         res.fluent_rest = {
