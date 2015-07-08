@@ -38,6 +38,10 @@ function expand_tokens(s, values) {
     return s.replace(/\{(\w+)\}/g, (match, id) => values[id] ? values[id] : match);
 }
 
+function is_db_function(s) {
+    return s && s.indexOf('(') > -1 && s.indexOf(')') > -1
+}
+
 function middleware_chainer(mp, i, req, res) {
     if (i >= mp.rest_service.middlewares.length) {
         res.end();
@@ -340,21 +344,31 @@ class entity_builder {
     _update(uri, req, res, id, obj) {
         return new Promise((resolve, reject) => {
             let mp = this.resource.mount_point;
-            this._db
-                .update(this.entity('patch', req, id), obj)
-                .where(this._primary_key, id)
-                .returning(select_fields(req.query.fields))
-                .row((err, row) => {
-                    if (!row) {
-                        let error = new Error(
-                            `No resource exists at ${expand_tokens(uri, req.params)}/${id}/ ` + 
-                            `or the optimisic lock value did not match.`);
-                        error.status_code = 404;
-                        reject(error);
-                    } else {
-                        resolve(row);
-                    }
-                });
+            let handler = (err, row) => {
+                if (!row) {
+                    let error = new Error(
+                        `No resource exists at ${expand_tokens(uri, req.params)}/${id}/ ` +
+                        `or the optimisic lock value did not match.`);
+                    error.status_code = 404;
+                    reject(error);
+                } else {
+                    resolve(row);
+                }
+            };
+            let entity_name = this.entity('patch', req, id);
+            let fields = select_fields(req.query.fields);
+            if (is_db_function(entity_name)) {
+                this._db
+                    .select(fields)
+                    .from(entity_name)
+                    .row(handler);
+            } else {
+                this._db
+                    .update(entity_name, obj)
+                    .where(this._primary_key, id)
+                    .returning(fields)
+                    .row(handler);
+            }
         });
     }
 
@@ -545,32 +559,45 @@ class entity_builder {
                 return;
             }
 
-            this._db
-                .update(this.entity('put', req, id), req.body)
-                .where(this._primary_key, id)
-                .returning(select_fields(req.query.fields))
-                .row((err, row) => {
-                    if (!row) {
-                        let error = new Error(
-                            `No resource exists at ${expand_tokens(uri, req.params)}/${id}/ ` + 
-                            `or the optimisic lock value did not match.`);
-                        error.status_code = 404;                    
-                        res.fluent_rest = {
-                            error,
-                            links: []
-                        };
-                        middleware_chainer(mp, 0, req, res);
-                    } else {
-                        res.fluent_rest = {
-                            rows: [row],
-                            links: [],
-                            name: mp.resource_name,
-                            error: this._map_error(err),
-                            uri: `${expand_tokens(uri, req.params)}/${id}/`
-                        };
-                        middleware_chainer(mp, 0, req, res);
-                    }
-                });
+            let handler = (err, row) => {
+                if (!row) {
+                    let error = new Error(
+                        `No resource exists at ${expand_tokens(uri, req.params)}/${id}/ ` + 
+                        `or the optimisic lock value did not match.`);
+                    error.status_code = 404;                    
+                    res.fluent_rest = {
+                        error,
+                        links: []
+                    };
+                    middleware_chainer(mp, 0, req, res);
+                } else {
+                    res.fluent_rest = {
+                        rows: [row],
+                        links: [],
+                        name: mp.resource_name,
+                        error: this._map_error(err),
+                        uri: `${expand_tokens(uri, req.params)}/${id}/`
+                    };
+                    middleware_chainer(mp, 0, req, res);
+                }
+            };
+
+            let entity_name = this.entity('put', req, id);
+            let fields = select_fields(req.query.fields);
+            
+            if (is_db_function(entity_name)) {
+                this._db
+                    .select(fields)
+                    .from(entity_name)
+                    .where(this._primary_key, id)
+                    .row(handler);
+            } else {
+                this._db
+                    .update(entity_name, req.body)
+                    .where(this._primary_key, id)
+                    .returning(fields)
+                    .row(handler);
+            }
         });
 
         router.patch(`/:${id_name}`, (req, res, next) => {
@@ -635,21 +662,33 @@ class entity_builder {
                 req.body[fk] = req.params[mp.endpoint.id_name];
             }
 
-            this._db
-                .insert(this.entity('post', req), req.body)
-                .returning(select_fields(req.query.fields))
-                .row((err, row) => {
-                    let id = row ? row[this._primary_key] : null;
-                    res.fluent_rest = {
-                        rows: [row],
-                        links: [],
-                        status_code: 201,
-                        name: mp.resource_name,
-                        error: this._map_error(err),
-                        uri: id ? `${expand_tokens(uri, req.params)}/${id}/` : `${expand_tokens(uri, req.params)}/`
-                    };
-                    middleware_chainer(mp, 0, req, res);
-                });
+            let handler = (err, row) => {
+                let id = row ? row[this._primary_key] : null;
+                res.fluent_rest = {
+                    rows: [row],
+                    links: [],
+                    status_code: 201,
+                    name: mp.resource_name,
+                    error: this._map_error(err),
+                    uri: id ? `${expand_tokens(uri, req.params)}/${id}/` : `${expand_tokens(uri, req.params)}/`
+                };
+                middleware_chainer(mp, 0, req, res);
+            };
+
+            let entity_name = this.entity('post', req);
+            let fields = select_fields(req.query.fields);
+
+            if (is_db_function(entity_name)) {
+                this._db
+                    .select(fields)
+                    .from(entity_name)
+                    .row(handler);
+            } else {
+                this._db
+                    .insert(entity_name, req.body)
+                    .returning(fields)
+                    .row(handler);
+            }
         });
 
         router.delete('/', (req, res) => {
