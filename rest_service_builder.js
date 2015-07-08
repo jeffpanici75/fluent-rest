@@ -285,9 +285,9 @@ class entity_builder {
         return this._full_text_entity;
     }
 
-    entity(use, req) {
+    entity(use, req, id) {
         if (typeof this._entity === 'function')
-            return this._entity(use, req);
+            return this._entity(use, req, id);
         return this._entity;
     }
 
@@ -318,7 +318,7 @@ class entity_builder {
             let mp = this.resource.mount_point;
             this._db
                 .select(select_fields(req.query.fields))
-                .from(this.entity('get-id', req))
+                .from(this.entity('get-id', req, id))
                 .where(this._primary_key, id)
                 .rows((err, rows) => {
                     if (!err) {
@@ -341,7 +341,7 @@ class entity_builder {
         return new Promise((resolve, reject) => {
             let mp = this.resource.mount_point;
             this._db
-                .update(this.entity('patch', req), obj)
+                .update(this.entity('patch', req, id), obj)
                 .where(this._primary_key, id)
                 .returning(select_fields(req.query.fields))
                 .row((err, row) => {
@@ -546,7 +546,7 @@ class entity_builder {
             }
 
             this._db
-                .update(this.entity('put', req), req.body)
+                .update(this.entity('put', req, id), req.body)
                 .where(this._primary_key, id)
                 .returning(select_fields(req.query.fields))
                 .row((err, row) => {
@@ -697,7 +697,7 @@ class entity_builder {
             }
 
             this._db
-                .delete(this.entity('del', req))
+                .delete(this.entity('del', req, id))
                 .where(this._primary_key, id)
                 .run((err) => {
                     res.fluent_rest = {
