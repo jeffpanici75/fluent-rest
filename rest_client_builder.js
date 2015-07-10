@@ -344,6 +344,20 @@ class resource_builder {
         return this;
     }
 
+    disable_all() {
+        this._actions = {
+            find: false,
+            create: false,
+            update: false,
+            patch: false,
+            delete: false,
+            find_by_id: false,
+            delete_by_id: false,
+            find_by_named_query: false
+        };
+        return this;
+    }
+
     disable_find() {
         this._actions.find = false;
         return this;
