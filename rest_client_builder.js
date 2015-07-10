@@ -22,14 +22,14 @@ function add_child_accessors(client, parent, children) {
         return;
     children.forEach(x => {
         parent[x.name] = () => {
-            let proxy = new resource_proxy(client, x.name, parent, x._actions);
+            let proxy = new resource_proxy(client, x.name, parent, x._actions, x.methods);
             add_child_accessors(client, proxy, x._children);
             return proxy;
         };
         parent[pluralize.singular(x.name)] = id => {
             if (!id)
                 throw new Error("The 'id' parameter is required.");
-            let proxy = new resource_proxy(client, x.name, parent, x._actions, id);
+            let proxy = new resource_proxy(client, x.name, parent, x._actions, x.methods, id);
             add_child_accessors(client, proxy, x._children);
             return proxy;
         };
@@ -84,7 +84,7 @@ class hal_client {
 }
 
 class resource_proxy {
-    constructor(client, name, parent, actions, parent_id) {
+    constructor(client, name, parent, actions, methods, parent_id) {
         this._name = name;
         this._children = [];
         this._actions = actions || {
@@ -113,6 +113,12 @@ class resource_proxy {
             current = current._parent;
             if (!current || !current.name)
                 break;
+        }
+
+        if (methods) {
+            methods.forEach(x => {
+                this[x.name] = x.func;
+            });
         }
     }
 
@@ -304,6 +310,7 @@ class resource_builder {
             delete_by_id: true,
             find_by_named_query: true
         };
+        this._methods = [];
         this._children = [];
         this._description = null;
         this._parent = parent || null;
@@ -315,6 +322,15 @@ class resource_builder {
 
     get parent() {
         return this._parent;
+    }
+
+    get methods() {
+        return this._methods;
+    }
+
+    method(name, func) {
+        this._methods.push({ name, func });
+        return this;
     }
 
     resource(name) {

@@ -938,6 +938,24 @@ class resource_builder {
         return this;
     }
 
+    for_router(router) {
+        this._supports_pagination = false;
+        let mp = this.mount_point;
+        router.fluent_rest = {
+            endpoint: null,
+            parent: mp.router
+        };
+        let mount_uri = mp.mount_uri();
+        let uri = uri_append(mp.endpoint ? mp.endpoint.parent_uri() : '', mp.path);
+        let ep = new endpoint(mp.resource_name, router, [], mp.path, null);
+        mp.router.use(mount_uri, router);
+        router.fluent_rest.endpoint = ep;
+        if (mp.endpoint) {
+            mp.endpoint.links.push({ name: mp.resource_name, url: { href: `${uri}/`, templated: true }});
+        }
+        return ep;
+    }
+
     for_endpoints(endpoints) {
         this._supports_pagination = false;
         return new endpoints_builder(endpoints, this);
