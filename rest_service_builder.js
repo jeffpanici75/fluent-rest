@@ -946,12 +946,13 @@ class resource_builder {
             parent: mp.router
         };
         let mount_uri = mp.mount_uri();
+        let id_name = `${mp.singular_resource_name}_id`;
         let uri = uri_append(mp.endpoint ? mp.endpoint.parent_uri() : '', mp.path);
-        let ep = new endpoint(mp.resource_name, router, [], mp.path, null);
+        let ep = new endpoint(mp.resource_name, router, [], mp.path, id_name);
         mp.router.use(mount_uri, router);
         router.fluent_rest.endpoint = ep;
         if (mp.endpoint) {
-            mp.endpoint.links.push({ name: mp.resource_name, url: { href: `${uri}/`, templated: true }});
+            mp.endpoint.links.push({ name: mp.resource_name, url: { href: `${uri}{/${id_name}}`, templated: true }});
         }
         return ep;
     }
