@@ -21,12 +21,15 @@ function add_child_accessors(client, parent, children) {
     if (!children) 
         return;
     children.forEach(x => {
+        let singular = pluralize.singular(x.name);
         parent[x.name] = () => {
+            if (arguments.length > 0)
+                throw new Error(`The access method ${x.name}() does not accept parameters. Did you mean to invoke ${singular}(id) instead?`);
             let proxy = new resource_proxy(client, x.name, parent, x._actions, x.methods);
             add_child_accessors(client, proxy, x._children);
             return proxy;
         };
-        parent[pluralize.singular(x.name)] = id => {
+        parent[singular] = id => {
             if (!id)
                 throw new Error("The 'id' parameter is required.");
             let proxy = new resource_proxy(client, x.name, parent, x._actions, x.methods, id);
