@@ -117,7 +117,8 @@ class resource_proxy {
 
         if (methods) {
             methods.forEach(x => {
-                this[x.name] = x.func;
+                if (x.func)
+                    this[x.name] = x.func.bind(this);
             });
         }
     }
@@ -152,6 +153,10 @@ class resource_proxy {
 
     get template_params() {
         return this._template_params;
+    }
+
+    _json(res) {
+        return json(res);
     }
 
     _throw_if_disabled(action) {
