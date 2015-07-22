@@ -320,24 +320,26 @@ class entity_builder {
     _find_by_id(uri, req, res, id) {
         return new Promise((resolve, reject) => {
             let mp = this.resource.mount_point;
-            this._db
+            let entity = this.entity('get-id', req, id);
+            let query = this._db
                 .select(select_fields(req.query.fields))
-                .from(this.entity('get-id', req, id))
-                .where(this._primary_key, id)
-                .rows((err, rows) => {
-                    if (!err) {
-                        if (!rows || rows.length === 0) {
-                            err = new Error(`No resource exists at ${expand_tokens(uri, req.params)}/${id}/.`);
-                            err.status_code = 404;
-                        } else if (rows.length > 1) {
-                            err = new Error(
-                                `More than one resource exists at ${expand_tokens(uri, req.params)}/${id}/ ` + 
-                                `where only one should exist.`);
-                            err.status_code = 400;
-                        }
+                .from(entity);
+            if (!is_db_function(entity))
+                query = query.where(this._primary_key, id);
+            query.rows((err, rows) => {
+                if (!err) {
+                    if (!rows || rows.length === 0) {
+                        err = new Error(`No resource exists at ${expand_tokens(uri, req.params)}/${id}/.`);
+                        err.status_code = 404;
+                    } else if (rows.length > 1) {
+                        err = new Error(
+                            `More than one resource exists at ${expand_tokens(uri, req.params)}/${id}/ ` + 
+                            `where only one should exist.`);
+                        err.status_code = 400;
                     }
-                    err ? reject(err) : resolve(first(rows));
-                });
+                }
+                err ? reject(err) : resolve(first(rows));
+            });
         });
     }
 
