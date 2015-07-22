@@ -1,6 +1,6 @@
 {
   "name": "fluent-rest",
-  "version": "0.0.23",
+  "version": "0.0.24",
   "description": "Automate the creation of RESTful endpoints for relational entities.",
   "es6": true,
   "repository": {
