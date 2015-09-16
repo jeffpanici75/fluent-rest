@@ -4,8 +4,6 @@ then
     exit 1
 fi
 
-cp ./npmrc ~/.npmrc
-
 if [[ "${TRAVIS_BRANCH}" == "environments/npm" ]] ;
 then
     yes '' | npm adduser

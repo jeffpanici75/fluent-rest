@@ -10,5 +10,9 @@ notifications:
 node_js:
   - iojs-v2.4.0
 
+before_install:
+  - openssl aes-256-cbc -K $encrypted_915a34ed6bb5_key -iv $encrypted_915a34ed6bb5_iv -in .npmrc.enc -out .npmrc -d
+  - cp .npmrc ~/.npmrc
+
 after_success:
   - ./deploy.sh 
