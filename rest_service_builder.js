@@ -930,7 +930,7 @@ class resource_builder {
         return this;
     }
 
-    description(description) {
+    use_description(description) {
         this._description = description;
         return this;
     }
