@@ -15,13 +15,19 @@ function last(x) {
 }
 
 function uri_append(l, r) {
-    let uri = l;
-    if (!r) return uri;
-    if (!uri.endsWith('/') && !r.startsWith('/'))
-        uri += '/';
-    if (r !== '/')
-        uri += r;
-    return uri;
+    if (!r) return l;
+
+    if (l.endsWith('/'))
+        l = l.substring(0, l.length - 1);
+
+    if (r.startsWith('/')) {
+        if (r.length > 1)
+            r = r.substring(1);
+        else
+            r = '';
+    }
+
+    return `${l}/${r}`;
 }
 
 function select_fields(fields) {
@@ -1000,6 +1006,10 @@ class mount_point_builder {
 
     get router() {
         return this._router;
+    }
+
+    get basename() {
+        return this._basename;
     }
 
     get rest_service() {
